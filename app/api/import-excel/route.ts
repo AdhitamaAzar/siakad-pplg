@@ -197,6 +197,15 @@ export async function POST(req: NextRequest) {
       const rowErrors: string[] = [];
 
       for (const row of rows) {
+        // Jika NIS dan Nama kosong, lewati saja (biarkan)
+        if (!row.nis && !row.nama) {
+          continue;
+        }
+        // Jika salah satu kosong, lewati juga agar tidak merusak database
+        if (!row.nis || !row.nama) {
+          continue;
+        }
+
         try {
           await prisma.$transaction(async (tx) => {
             const cleanNisStr = String(row.nis).replace(/\s+/g, "").trim();
@@ -234,8 +243,8 @@ export async function POST(req: NextRequest) {
               },
             });
 
-            // Hitung derived values
-            const vals = Object.values(row.nilai).map((v) => (v === "" || v === undefined ? null : Number(v)));
+            // Hitung derived values (pastikan nilai null/kosong tidak berubah menjadi 0)
+            const vals = Object.values(row.nilai).map((v) => (v === "" || v === undefined || v === null ? null : Number(v)));
             const rataRata = hitungRataRata(vals);
             const nilaiRaport = hitungNilaiRaport(rataRata);
             const predikat = hitungPredikat(nilaiRaport);

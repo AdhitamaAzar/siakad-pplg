@@ -109,6 +109,16 @@ body {
   background: #4a5568;
 }
 
+/* utility to hide scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+
 /* ─── SIDEBAR ANIMATIONS ─────────────────────────────────────────────────── */
 @keyframes slideInLeft {
   from { transform: translateX(-100%); opacity: 0; }

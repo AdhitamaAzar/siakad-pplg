@@ -200,6 +200,13 @@ export default function ImportForm() {
     const updatedSheets = sheets.map((sheet) => {
       if (!sheet.isSelected) return sheet;
 
+      // Filter baris kosong terlebih dahulu (jika NIS dan Nama kosong, abaikan)
+      const validRows = sheet.rows.filter((row) => {
+        const nisVal = sheet.columnMap.nis ? String(row[sheet.columnMap.nis] || "").trim() : "";
+        const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
+        return nisVal !== "" || namaVal !== "";
+      });
+
       const errors: string[] = [];
       if (!sheet.targetClassId) {
         errors.push("Target kelas belum ditentukan.");
@@ -213,9 +220,9 @@ export default function ImportForm() {
         errors.push("Kolom Nama belum dipetakan.");
       }
 
-      sheet.rows.forEach((row, idx) => {
-        const nisVal = sheet.columnMap.nis ? row[sheet.columnMap.nis] : "";
-        const namaVal = sheet.columnMap.nama ? row[sheet.columnMap.nama] : "";
+      validRows.forEach((row, idx) => {
+        const nisVal = sheet.columnMap.nis ? String(row[sheet.columnMap.nis] || "").trim() : "";
+        const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
 
         if (!nisVal) {
           errors.push(`Baris ${idx + 1}: NIS kosong.`);
@@ -228,7 +235,7 @@ export default function ImportForm() {
         DB_FIELDS.forEach((f) => {
           if (f.key !== "nis" && f.key !== "nama" && sheet.columnMap[f.key]) {
             const val = row[sheet.columnMap[f.key]];
-            if (val !== "" && val !== null && val !== undefined) {
+            if (val !== "" && val !== null && val !== undefined && String(val).trim() !== "") {
               const num = Number(val);
               if (isNaN(num) || num < 0 || num > 100) {
                 errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${f.label} tidak valid (${val}). Harus 0-100.`);
@@ -238,7 +245,7 @@ export default function ImportForm() {
         });
       });
 
-      return { ...sheet, validationErrors: errors };
+      return { ...sheet, rows: validRows, validationErrors: errors };
     });
 
     setSheets(updatedSheets);
@@ -272,8 +279,10 @@ export default function ImportForm() {
           if (f.key !== "nis" && f.key !== "nama") {
             const excelHeader = sheet.columnMap[f.key];
             const rawVal = excelHeader ? row[excelHeader] : "";
+            // Jika nilai kosong (empty string, null, undefined, space), simpan sebagai null agar diabaikan
+            const isEmpty = rawVal === "" || rawVal === null || rawVal === undefined || String(rawVal).trim() === "";
             nilai[f.key.replace("nilai", "").replace(/^\w/, (c) => c.toLowerCase())] =
-              rawVal !== "" ? Number(rawVal) : null;
+              isEmpty ? null : Number(rawVal);
           }
         });
 
@@ -541,12 +550,12 @@ export default function ImportForm() {
         <div className="space-y-6">
           <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 space-y-4">
             {/* Sheet Tabs */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="text-emerald-400 h-5 w-5" />
-                <h4 className="text-sm font-bold text-white">Validasi & Pratinjau Nilai</h4>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 shrink-0">
+                <FileSpreadsheet className="text-emerald-400 h-5 w-5 shrink-0" />
+                <h4 className="text-sm font-bold text-white whitespace-nowrap">Validasi & Pratinjau Nilai</h4>
               </div>
-              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg">
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg overflow-x-auto max-w-full no-scrollbar">
                 {sheets.map((sheet, idx) => {
                   if (!sheet.isSelected) return null;
                   const hasErr = sheet.validationErrors.length > 0;
@@ -554,14 +563,14 @@ export default function ImportForm() {
                     <button
                       key={sheet.sheetName}
                       onClick={() => setCurrentSheetIdx(idx)}
-                      className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-1 shrink-0 ${
                         currentSheetIdx === idx
                           ? "bg-slate-800 text-white"
                           : "text-slate-500 hover:text-slate-300"
                       }`}
                     >
-                      {sheet.sheetName}
-                      {hasErr && <AlertCircle size={10} className="text-rose-400" />}
+                      <span className="whitespace-nowrap">{sheet.sheetName}</span>
+                      {hasErr && <AlertCircle size={10} className="text-rose-400 shrink-0" />}
                     </button>
                   );
                 })}
