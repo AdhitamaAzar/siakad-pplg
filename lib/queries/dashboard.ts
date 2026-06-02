@@ -118,6 +118,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
         tahunAjaran: TAHUN_AJARAN,
       },
       select: {
+        studentId:       true,
         persentaseHadir: true,
         student: { select: { kelasId: true } },
       },
@@ -182,7 +183,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const topSiswa: TopSiswaRow[] = topGrades.map((g, index) => {
     // Cari data absensi siswa ini
     const absensi = allAttendances.find(
-      (a) => a.student.kelasId === g.student.kelas?.id
+      (a) => a.studentId === g.studentId
     );
     return {
       rank:            index + 1,

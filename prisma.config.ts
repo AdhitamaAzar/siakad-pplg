@@ -30,18 +30,10 @@ const DATABASE_URL =
  * Contoh lokal Laragon: postgresql://root:@localhost:5432/siakad_pplg
  */
 export default defineConfig({
-  earlyAccess: true,
   schema: path.join("prisma", "schema.prisma"),
 
   datasource: {
     url: DATABASE_URL,
-  },
-
-  migrate: {
-    async adapter() {
-      const { PrismaPg } = await import("@prisma/adapter-pg");
-      return new PrismaPg({ connectionString: DATABASE_URL });
-    },
   },
 
   migrations: {

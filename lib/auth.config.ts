@@ -32,7 +32,7 @@ export const authConfig = {
           username: token.username as string,
           role: token.role as string,
           nama: token.nama as string,
-        };
+        } as any;
       }
       return session;
     },

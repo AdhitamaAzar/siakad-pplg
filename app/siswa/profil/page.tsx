@@ -34,11 +34,11 @@ export default async function SiswaProfilPage() {
       >
         <div className="w-20 h-20 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
           <span className="text-3xl font-bold text-indigo-300">
-            {(student?.nama ?? session.user.name ?? "?").charAt(0)}
+            {(student?.nama ?? session.user.nama ?? "?").charAt(0)}
           </span>
         </div>
         <div>
-          <h2 className="text-xl font-bold text-white">{student?.nama ?? session.user.name}</h2>
+          <h2 className="text-xl font-bold text-white">{student?.nama ?? session.user.nama}</h2>
           <p className="text-slate-400 text-sm mt-0.5">{student?.kelas?.namaKelas ?? "—"}</p>
           <p className="text-slate-600 text-xs mt-1 font-mono">{student?.nis ?? "—"}</p>
         </div>
@@ -47,7 +47,7 @@ export default async function SiswaProfilPage() {
       {/* Info detail */}
       <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 divide-y divide-slate-800/60">
         {[
-          { icon: Key,      label: "Username",    value: session.user.username ?? session.user.name ?? "—" },
+          { icon: Key,      label: "Username",    value: session.user.username ?? session.user.nama ?? "—" },
           { icon: BookOpen, label: "NIS",         value: student?.nis ?? "—" },
           { icon: School,   label: "Kelas",       value: student?.kelas?.namaKelas ?? "—" },
           { icon: BookOpen, label: "Tahun Ajaran", value: "2025/2026" },

@@ -52,9 +52,6 @@ export default async function GuruAbsensiPage({ searchParams }: PageProps) {
         take: 1,
         select: {
           totalHadir:      true,
-          totalSakit:      true,
-          totalIzin:       true,
-          totalAlpha:      true,
           totalTidakHadir: true,
           persentaseHadir: true,
         },
@@ -111,7 +108,7 @@ export default async function GuruAbsensiPage({ searchParams }: PageProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-800/60">
-              {["#", "Nama Siswa", "Hadir", "Sakit", "Izin", "Alpha", "Total Absen", "% Hadir"].map((h) => (
+              {["#", "Nama Siswa", "Hadir", "Total Absen", "% Hadir"].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                   {h}
                 </th>
@@ -126,9 +123,6 @@ export default async function GuruAbsensiPage({ searchParams }: PageProps) {
                   <td className="px-4 py-3 text-slate-600 text-xs tabular-nums">{i + 1}</td>
                   <td className="px-4 py-3 font-medium text-slate-200">{s.nama}</td>
                   <td className="px-4 py-3 text-emerald-400 font-semibold tabular-nums text-sm">{a?.totalHadir ?? "—"}</td>
-                  <td className="px-4 py-3 text-sky-400 tabular-nums text-sm">{a?.totalSakit ?? "—"}</td>
-                  <td className="px-4 py-3 text-amber-400 tabular-nums text-sm">{a?.totalIzin ?? "—"}</td>
-                  <td className="px-4 py-3 text-rose-400 tabular-nums text-sm">{a?.totalAlpha ?? "—"}</td>
                   <td className="px-4 py-3 text-slate-500 tabular-nums text-sm">{a?.totalTidakHadir ?? "—"}</td>
                   <td className="px-4 py-3">
                     <PersenBadge persen={a?.persentaseHadir ?? null} />
@@ -138,7 +132,7 @@ export default async function GuruAbsensiPage({ searchParams }: PageProps) {
             })}
             {students.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-slate-600 text-sm">
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-600 text-sm">
                   Belum ada siswa di kelas ini.
                 </td>
               </tr>
