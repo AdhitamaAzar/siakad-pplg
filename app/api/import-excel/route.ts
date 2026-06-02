@@ -232,16 +232,26 @@ export async function POST(req: NextRequest) {
               });
             }
 
-            const student = await tx.student.upsert({
-              where:  { nis: cleanNisStr },
-              update: { nama: row.nama, kelasId: classId, userId: user.id },
-              create: {
-                nis:     cleanNisStr,
-                nama:    row.nama,
-                kelasId: classId,
-                userId:  user.id,
-              },
+            // Manual Upsert Student
+            let student = await tx.student.findUnique({
+              where: { nis: cleanNisStr },
             });
+
+            if (student) {
+              student = await tx.student.update({
+                where: { id: student.id },
+                data: { nama: row.nama, kelasId: classId, userId: user.id },
+              });
+            } else {
+              student = await tx.student.create({
+                data: {
+                  nis:     cleanNisStr,
+                  nama:    row.nama,
+                  kelasId: classId,
+                  userId:  user.id,
+                },
+              });
+            }
 
             // Hitung derived values (pastikan nilai null/kosong tidak berubah menjadi 0)
             const vals = Object.values(row.nilai).map((v) => (v === "" || v === undefined || v === null ? null : Number(v)));
@@ -251,51 +261,48 @@ export async function POST(req: NextRequest) {
             const totalKosong = vals.filter((v) => v === null).length;
             const statusTuntas = nilaiRaport !== null && nilaiRaport >= 75 ? "TUNTAS" : nilaiRaport !== null ? "TIDAK TUNTAS" : null;
 
-            await tx.grade.upsert({
+            // Manual Upsert Grade
+            const existingGrade = await tx.grade.findFirst({
               where: {
-                studentId_semester_tahunAjaran: {
-                  studentId:   student.id,
-                  semester,
-                  tahunAjaran,
-                },
-              },
-              update: {
-                nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : undefined,
-                nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : undefined,
-                nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : undefined,
-                nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : undefined,
-                nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : undefined,
-                nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : undefined,
-                nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : undefined,
-                nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : undefined,
-                nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : undefined,
-                rataRata,
-                nilaiRaport,
-                predikat,
-                jumlahNilaiKosong:  totalKosong,
-                statusTuntas,
-              },
-              create: {
-                studentId:          student.id,
-                subjectId:          targetSubjectId,
+                studentId: student.id,
                 semester,
                 tahunAjaran,
-                nilaiGithub:        numOrNull(row.nilai.github),
-                nilaiApi:           numOrNull(row.nilai.api),
-                nilaiAdminPanel:    numOrNull(row.nilai.adminPanel),
-                nilaiLandingPage:   numOrNull(row.nilai.landingPage),
-                nilaiKagglePython:  numOrNull(row.nilai.kagglePython),
-                nilaiKaggleSql:     numOrNull(row.nilai.kaggleSql),
-                nilaiKaggleMl:      numOrNull(row.nilai.kaggleMl),
-                nilaiUjianMl:       numOrNull(row.nilai.ujianMl),
-                nilaiUjianSql:      numOrNull(row.nilai.ujianSql),
-                rataRata,
-                nilaiRaport,
-                predikat,
-                jumlahNilaiKosong:  totalKosong,
-                statusTuntas,
               },
             });
+
+            const gradeData = {
+              nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : undefined,
+              nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : undefined,
+              nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : undefined,
+              nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : undefined,
+              nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : undefined,
+              nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : undefined,
+              nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : undefined,
+              nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : undefined,
+              nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : undefined,
+              rataRata,
+              nilaiRaport,
+              predikat,
+              jumlahNilaiKosong:  totalKosong,
+              statusTuntas,
+            };
+
+            if (existingGrade) {
+              await tx.grade.update({
+                where: { id: existingGrade.id },
+                data: gradeData,
+              });
+            } else {
+              await tx.grade.create({
+                data: {
+                  studentId:          student.id,
+                  subjectId:          targetSubjectId,
+                  semester,
+                  tahunAjaran,
+                  ...gradeData,
+                },
+              });
+            }
           });
 
           success++;
@@ -432,17 +439,26 @@ export async function POST(req: NextRequest) {
             });
           }
 
-          // Upsert student
-          const student = await tx.student.upsert({
-            where:  { nis: row.nis },
-            update: { nama: row.nama, kelasId: kelas.id, userId: user.id },
-            create: {
-              nis:     row.nis,
-              nama:    row.nama,
-              kelasId: kelas.id,
-              userId:  user.id,
-            },
+          // Manual Upsert Student
+          let student = await tx.student.findUnique({
+            where: { nis: row.nis },
           });
+
+          if (student) {
+            student = await tx.student.update({
+              where: { id: student.id },
+              data: { nama: row.nama, kelasId: kelas.id, userId: user.id },
+            });
+          } else {
+            student = await tx.student.create({
+              data: {
+                nis:     row.nis,
+                nama:    row.nama,
+                kelasId: kelas.id,
+                userId:  user.id,
+              },
+            });
+          }
 
           // Hitung derived values
           const vals       = Object.values(row.nilai);
@@ -452,52 +468,48 @@ export async function POST(req: NextRequest) {
           const totalKosong = vals.filter((v) => v === null).length;
           const statusTuntas = nilaiRaport !== null && nilaiRaport >= 75 ? "TUNTAS" : nilaiRaport !== null ? "TIDAK TUNTAS" : null;
 
-          // Upsert grade
-          await tx.grade.upsert({
+          // Manual Upsert Grade
+          const existingGrade = await tx.grade.findFirst({
             where: {
-              studentId_semester_tahunAjaran: {
-                studentId:   student.id,
-                semester,
-                tahunAjaran,
-              },
-            },
-            update: {
-              nilaiGithub:        row.nilai.github,
-              nilaiApi:           row.nilai.api,
-              nilaiAdminPanel:    row.nilai.adminPanel,
-              nilaiLandingPage:   row.nilai.landingPage,
-              nilaiKagglePython:  row.nilai.kagglePython,
-              nilaiKaggleSql:     row.nilai.kaggleSql,
-              nilaiKaggleMl:      row.nilai.kaggleMl,
-              nilaiUjianMl:       row.nilai.ujianMl,
-              nilaiUjianSql:      row.nilai.ujianSql,
-              rataRata,
-              nilaiRaport,
-              predikat,
-              jumlahNilaiKosong: totalKosong,
-              statusTuntas,
-            },
-            create: {
-              studentId:          student.id,
-              subjectId:          defaultSubject.id,
+              studentId: student.id,
               semester,
               tahunAjaran,
-              nilaiGithub:        row.nilai.github,
-              nilaiApi:           row.nilai.api,
-              nilaiAdminPanel:    row.nilai.adminPanel,
-              nilaiLandingPage:   row.nilai.landingPage,
-              nilaiKagglePython:  row.nilai.kagglePython,
-              nilaiKaggleSql:     row.nilai.kaggleSql,
-              nilaiKaggleMl:      row.nilai.kaggleMl,
-              nilaiUjianMl:       row.nilai.ujianMl,
-              nilaiUjianSql:      row.nilai.ujianSql,
-              rataRata,
-              nilaiRaport,
-              predikat,
-              jumlahNilaiKosong:  totalKosong,
-              statusTuntas,
             },
           });
+
+          const gradeData = {
+            nilaiGithub:        row.nilai.github,
+            nilaiApi:           row.nilai.api,
+            nilaiAdminPanel:    row.nilai.adminPanel,
+            nilaiLandingPage:   row.nilai.landingPage,
+            nilaiKagglePython:  row.nilai.kagglePython,
+            nilaiKaggleSql:     row.nilai.kaggleSql,
+            nilaiKaggleMl:      row.nilai.kaggleMl,
+            nilaiUjianMl:       row.nilai.ujianMl,
+            nilaiUjianSql:      row.nilai.ujianSql,
+            rataRata,
+            nilaiRaport,
+            predikat,
+            jumlahNilaiKosong:  totalKosong,
+            statusTuntas,
+          };
+
+          if (existingGrade) {
+            await tx.grade.update({
+              where: { id: existingGrade.id },
+              data: gradeData,
+            });
+          } else {
+            await tx.grade.create({
+              data: {
+                studentId:          student.id,
+                subjectId:          defaultSubject.id,
+                semester,
+                tahunAjaran,
+                ...gradeData,
+              },
+            });
+          }
         });
 
         success++;
