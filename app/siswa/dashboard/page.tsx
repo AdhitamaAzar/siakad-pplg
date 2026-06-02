@@ -1,0 +1,250 @@
+// =============================================================================
+// FILE: app/siswa/dashboard/page.tsx
+// TUJUAN: Dashboard siswa — ringkasan nilai, absensi, dan progress akademik.
+//         Server Component dengan data Prisma berdasarkan session siswa.
+// =============================================================================
+
+import type { Metadata } from "next";
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { TrendingUp, CalendarCheck, Award, BookOpen, Star } from "lucide-react";
+import prisma from "@/lib/prisma";
+
+export const metadata: Metadata = { title: "Dashboard Siswa" };
+export const revalidate = 300;
+
+const SEMESTER     = "Genap";
+const TAHUN_AJARAN = "2025/2026";
+
+/** Badge predikat */
+function PredikatBadge({ predikat }: { predikat: string | null }) {
+  if (!predikat) return <span className="text-slate-600 text-xs">—</span>;
+  const cfg: Record<string, string> = {
+    "Sangat Baik": "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    "Baik":        "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+    "Cukup":       "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    "Perlu Bimbingan": "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  };
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cfg[predikat] ?? "bg-slate-500/15 text-slate-300"}`}>
+      {predikat}
+    </span>
+  );
+}
+
+export default async function SiswaDashboardPage() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  // Cari data siswa berdasarkan userId dari session
+  const student = await prisma.student.findUnique({
+    where: { userId: Number(session.user.id) },
+    include: {
+      kelas:  true,
+      grades: {
+        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+        take: 1,
+      },
+      attendances: {
+        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+        take: 1,
+      },
+    },
+  });
+
+  // Jika tidak ditemukan (mis. user admin), tampilkan pesan
+  if (!student) {
+    return (
+      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-8 text-center">
+        <p className="text-slate-400">Data siswa tidak ditemukan.</p>
+      </div>
+    );
+  }
+
+  const grade      = student.grades[0]      ?? null;
+  const attendance = student.attendances[0] ?? null;
+
+  // Hitung ranking kelas (berdasarkan nilaiRaport)
+  let ranking: number | null = null;
+  if (grade?.nilaiRaport) {
+    const lebihTinggi = await prisma.grade.count({
+      where: {
+        semester:    SEMESTER,
+        tahunAjaran: TAHUN_AJARAN,
+        nilaiRaport: { gt: grade.nilaiRaport },
+        student:     { kelasId: student.kelasId },
+      },
+    });
+    ranking = lebihTinggi + 1;
+  }
+
+  const jam  = new Date().getHours();
+  const sapa = jam < 11 ? "Selamat Pagi" : jam < 15 ? "Selamat Siang" : jam < 18 ? "Selamat Sore" : "Selamat Malam";
+
+  return (
+    <div className="space-y-6 max-w-[900px]">
+
+      {/* ── GREETING ──────────────────────────────────────────────────── */}
+      <div
+        className="rounded-2xl p-6 border border-indigo-500/20 relative overflow-hidden"
+        style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(79,70,229,0.04))" }}
+      >
+        <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-5">
+          <Star size={100} />
+        </div>
+        <p className="text-indigo-300 text-sm font-medium mb-1">{sapa},</p>
+        <h1 className="text-2xl font-bold text-white">{student.nama} 👋</h1>
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <span className="text-slate-400 text-sm">{student.kelas.namaKelas}</span>
+          <span className="text-slate-700">·</span>
+          <span className="text-slate-400 text-sm font-mono text-xs">{student.nis}</span>
+          <span className="text-slate-700">·</span>
+          <span className="text-slate-400 text-sm">{SEMESTER} {TAHUN_AJARAN}</span>
+        </div>
+      </div>
+
+      {/* ── STAT CARDS ────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Nilai Raport */}
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4 col-span-1">
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center mb-3">
+            <TrendingUp size={18} className="text-indigo-400" />
+          </div>
+          <p className="text-2xl font-bold text-white">
+            {grade?.nilaiRaport ?? "—"}
+          </p>
+          <p className="text-xs font-semibold text-slate-300 mt-0.5">Nilai Raport</p>
+          <div className="mt-1">
+            <PredikatBadge predikat={grade?.predikat ?? null} />
+          </div>
+        </div>
+
+        {/* Rata-rata */}
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center mb-3">
+            <BookOpen size={18} className="text-emerald-400" />
+          </div>
+          <p className="text-2xl font-bold text-white">
+            {grade?.rataRata?.toFixed(1) ?? "—"}
+          </p>
+          <p className="text-xs font-semibold text-slate-300 mt-0.5">Rata-rata Tugas</p>
+          <p className="text-xs text-slate-600 mt-0.5">9 komponen</p>
+        </div>
+
+        {/* Kehadiran */}
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
+          <div className="w-9 h-9 rounded-xl bg-sky-500/10 flex items-center justify-center mb-3">
+            <CalendarCheck size={18} className="text-sky-400" />
+          </div>
+          <p className="text-2xl font-bold text-white">
+            {attendance ? `${attendance.persentaseHadir}%` : "—"}
+          </p>
+          <p className="text-xs font-semibold text-slate-300 mt-0.5">Kehadiran</p>
+          <p className="text-xs text-slate-600 mt-0.5">
+            {attendance ? `${attendance.totalHadir} dari ${attendance.totalHadir + attendance.totalTidakHadir} pertemuan` : "Belum ada data"}
+          </p>
+        </div>
+
+        {/* Ranking */}
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center mb-3">
+            <Award size={18} className="text-amber-400" />
+          </div>
+          <p className="text-2xl font-bold text-white">
+            {ranking ? `#${ranking}` : "—"}
+          </p>
+          <p className="text-xs font-semibold text-slate-300 mt-0.5">Ranking Kelas</p>
+          <p className="text-xs text-slate-600 mt-0.5">{student.kelas.namaKelas}</p>
+        </div>
+      </div>
+
+      {/* ── DETAIL NILAI KOMPONEN ─────────────────────────────────────── */}
+      {grade && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-1 h-4 rounded-full bg-indigo-500" />
+            <h2 className="text-sm font-semibold text-slate-300">Detail Nilai Komponen</h2>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800/60">
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Komponen</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Nilai</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Progress</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/40">
+                {[
+                  { label: "Portfolio / Github",  nilai: grade.nilaiGithub },
+                  { label: "Tugas API",            nilai: grade.nilaiApi },
+                  { label: "Admin Panel",          nilai: grade.nilaiAdminPanel },
+                  { label: "Landing Page",         nilai: grade.nilaiLandingPage },
+                  { label: "Kaggle Python",        nilai: grade.nilaiKagglePython },
+                  { label: "Kaggle SQL",           nilai: grade.nilaiKaggleSql },
+                  { label: "Kaggle ML",            nilai: grade.nilaiKaggleMl },
+                  { label: "Ujian ML",             nilai: grade.nilaiUjianMl },
+                  { label: "Ujian SQL",            nilai: grade.nilaiUjianSql },
+                ].map(({ label, nilai }) => (
+                  <tr key={label} className="hover:bg-white/[0.02]">
+                    <td className="px-4 py-2.5 text-slate-300 text-xs">{label}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-bold tabular-nums ${
+                        nilai === null ? "text-slate-600" :
+                        nilai >= 90 ? "text-emerald-400" :
+                        nilai >= 75 ? "text-indigo-400" :
+                        nilai >= 60 ? "text-amber-400" : "text-rose-400"
+                      }`}>
+                        {nilai ?? "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 w-40">
+                      {nilai !== null ? (
+                        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${nilai}%`,
+                              background: nilai >= 90 ? "#10b981" : nilai >= 75 ? "#6366f1" : nilai >= 60 ? "#f59e0b" : "#ef4444",
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-700">Belum dikerjakan</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Footer summary */}
+            <div className="px-4 py-3 border-t border-slate-800/60 flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                {grade.jumlahNilaiKosong ?? 0} komponen belum diisi
+              </span>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
+                ${grade.statusTuntas === "TUNTAS"
+                  ? "bg-emerald-500/15 text-emerald-300"
+                  : "bg-rose-500/15 text-rose-300"
+                }`}
+              >
+                {grade.statusTuntas ?? "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Belum ada data nilai */}
+      {!grade && (
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-8 text-center">
+          <p className="text-slate-500 text-sm">Belum ada data nilai untuk semester ini.</p>
+          <p className="text-slate-600 text-xs mt-1">Hubungi guru untuk memastikan data sudah diimport.</p>
+        </div>
+      )}
+
+    </div>
+  );
+}

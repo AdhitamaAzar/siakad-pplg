@@ -1,0 +1,326 @@
+// =============================================================================
+// FILE: prisma/schema.prisma
+// TUJUAN: Mendefinisikan schema database PostgreSQL untuk Sistem Informasi
+//         Akademik SMK PPLG. Mencakup model User/Auth, data akademik siswa,
+//         nilai, absensi, catatan guru, dan laporan.
+// AUTHOR: SIAKAD PPLG System
+// SEMESTER: Genap 2025/2026
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// AUTHENTICATION & AUTHORIZATION MODELS
+// =============================================================================
+
+/// Model Role: Mendefinisikan peran pengguna dalam sistem
+/// Terdapat 3 peran: "admin", "guru", "siswa"
+model Role {
+  id    Int    @id @default(autoincrement())
+  /// Nama unik peran: "admin" | "guru" | "siswa"
+  name  String @unique
+  users User[]
+
+  @@map("roles")
+}
+
+/// Model User: Akun autentikasi untuk semua pengguna sistem
+/// Setiap user terhubung ke satu Role dan memiliki profil (Teacher atau Student)
+model User {
+  id        Int      @id @default(autoincrement())
+  /// Username unik untuk login (contoh: "fandik.ariyanto", "14006")
+  username  String   @unique
+  /// Password yang sudah di-hash dengan bcrypt (min cost 12)
+  password  String
+  roleId    Int
+  role      Role     @relation(fields: [roleId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Relasi one-to-one ke profil guru (hanya ada jika role = "guru")
+  teacher Teacher?
+  /// Relasi one-to-one ke profil siswa (hanya ada jika role = "siswa")
+  student Student?
+
+  @@map("users")
+}
+
+// =============================================================================
+// GURU (TEACHER) MODEL
+// =============================================================================
+
+/// Model Teacher: Profil lengkap guru
+/// Saat ini hanya 1 guru: Fandik Ariyanto, S.ST
+model Teacher {
+  id     Int    @id @default(autoincrement())
+  userId Int    @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Nomor Induk Pegawai
+  nip    String @unique
+  /// Nama lengkap guru
+  nama   String
+  /// Email guru (opsional)
+  email  String?
+
+  notes Note[]
+
+  @@map("teachers")
+}
+
+// =============================================================================
+// KELAS (CLASS) MODEL
+// =============================================================================
+
+/// Model Class: Data kelas yang dikelola
+/// Terdapat 3 kelas: XI PPLG 1, XI PPLG 2, XI PPLG 3
+model Class {
+  id        Int       @id @default(autoincrement())
+  /// Nama kelas lengkap (contoh: "XI PPLG 1")
+  namaKelas String
+  /// Tingkat kelas dalam angka (contoh: 11 untuk kelas XI)
+  tingkat   Int
+  /// Tahun ajaran (contoh: "2025/2026")
+  tahunAjaran String  @default("2025/2026")
+  students  Student[]
+
+  @@unique([namaKelas, tahunAjaran])
+  @@map("classes")
+}
+
+// =============================================================================
+// SISWA (STUDENT) MODEL
+// =============================================================================
+
+/// Model Student: Profil lengkap siswa
+/// NIS sudah dinormalisasi (whitespace dihapus, format konsisten)
+model Student {
+  id      Int    @id @default(autoincrement())
+  userId  Int    @unique
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Nomor Induk Siswa yang sudah dinormalisasi
+  /// Contoh raw: "14006/1667.063" atau "14003 /1664 .063" → "14006/1667.063"
+  nis     String @unique
+  /// Nama lengkap siswa
+  nama    String
+  kelasId Int
+  kelas   Class  @relation(fields: [kelasId], references: [id])
+
+  grades      Grade[]
+  attendances Attendance[]
+  notes       Note[]
+  reports     Report[]
+
+  @@map("students")
+}
+
+// =============================================================================
+// NILAI (GRADE) MODEL
+// =============================================================================
+
+/// Model Grade: Nilai akademik siswa per semester
+/// Terdiri dari 9 komponen nilai tugas + nilai kalkulasi akhir
+model Grade {
+  id          Int     @id @default(autoincrement())
+  studentId   Int
+  student     Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Semester: "Genap" atau "Ganjil"
+  semester    String
+  /// Tahun ajaran (contoh: "2025/2026")
+  tahunAjaran String
+
+  // ─── 9 KOMPONEN NILAI TUGAS ───────────────────────────────────────────────
+  /// Kolom D: Portfolio / Link Github (0-100, NULL jika tidak dikerjakan)
+  nilaiGithub       Float?
+  /// Kolom E: Tugas API (0-100, NULL jika tidak dikerjakan)
+  nilaiApi          Float?
+  /// Kolom F: Admin Panel (0-100, NULL jika tidak dikerjakan)
+  nilaiAdminPanel   Float?
+  /// Kolom G: Link Landing Page (0-100, NULL jika tidak dikerjakan)
+  nilaiLandingPage  Float?
+  /// Kolom H: Kaggle Python (0-100, NULL jika tidak dikerjakan)
+  nilaiKagglePython Float?
+  /// Kolom I: Kaggle Intro to SQL (0-100, NULL jika tidak dikerjakan)
+  nilaiKaggleSql    Float?
+  /// Kolom J: Kaggle Machine Learning (0-100, NULL jika tidak dikerjakan)
+  nilaiKaggleMl     Float?
+  /// Kolom K: Ujian Online Machine Learning (0-100, NULL jika tidak dikerjakan)
+  nilaiUjianMl      Float?
+  /// Kolom L: Ujian Online SQL (0-100, NULL jika tidak dikerjakan)
+  nilaiUjianSql     Float?
+
+  // ─── HASIL KALKULASI ─────────────────────────────────────────────────────
+  /// Kolom M: Jumlah nilai kosong (dihitung otomatis)
+  jumlahNilaiKosong Int?
+  /// Kolom N: Persentase nilai yang sudah diisi (dihitung otomatis)
+  persentaseMaju    Float?
+  /// Kolom O: Persentase kehadiran
+  persentaseHadir   Float?
+  /// Kolom P: Rata-rata nilai tugas (dari 9 komponen)
+  rataRata          Float?
+  /// Kolom Q-T: Nilai Tugas Tambahan (TA1 dan TA2, opsional)
+  nilaiTa1          Float?
+  nilaiTa2          Float?
+  /// Kolom U: Nilai Hasil (nilai akhir sebelum raport)
+  nilaiHasil        Float?
+  /// Kolom V: Nilai Raport (nilai final yang dilaporkan)
+  nilaiRaport       Float?
+  /// Predikat berdasarkan nilai raport
+  /// "Sangat Baik" (90-100), "Baik" (75-89), "Cukup" (60-74), "Perlu Bimbingan" (<60)
+  predikat          String?
+  /// Kolom W: Status ketuntasan belajar
+  /// "TUNTAS" | "BELUM" | "TUNTAS DENGAN CATATAN"
+  statusTuntas      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, semester, tahunAjaran])
+  @@map("grades")
+}
+
+// =============================================================================
+// ABSENSI (ATTENDANCE) MODEL
+// =============================================================================
+
+/// Model Attendance: Rekap kehadiran siswa per semester
+/// Data diambil dari sheet "ab xipplg1/2/3" — hanya summary, bukan per-hari
+model Attendance {
+  id              Int     @id @default(autoincrement())
+  studentId       Int
+  student         Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Semester: "Genap" atau "Ganjil"
+  semester        String
+  /// Tahun ajaran (contoh: "2025/2026")
+  tahunAjaran     String
+  /// Total pertemuan yang dihadiri siswa
+  totalHadir      Int
+  /// Total pertemuan yang tidak dihadiri siswa
+  totalTidakHadir Int
+  /// Persentase kehadiran (totalHadir / totalPertemuan * 100)
+  persentaseHadir Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, semester, tahunAjaran])
+  @@map("attendances")
+}
+
+// =============================================================================
+// CATATAN (NOTE) MODEL
+// =============================================================================
+
+/// Model Note: Catatan guru per siswa dari sheet "catatan/catatan 2/catatan 3"
+/// Berisi catatan proyek siswa dan skor komponen proyek
+model Note {
+  id        Int     @id @default(autoincrement())
+  studentId Int
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId Int
+  teacher   Teacher @relation(fields: [teacherId], references: [id])
+
+  /// Judul atau nama proyek yang dicatat
+  judulProyek String?
+  /// Teks catatan lengkap dari guru
+  catatan     String
+
+  // ─── KOMPONEN SKOR PROYEK ─────────────────────────────────────────────────
+  /// Skor item/topik proyek
+  nilaiItem      Float?
+  /// Skor kualitas data
+  nilaiData      Float?
+  /// Skor alur/logika
+  nilaiAlur      Float?
+  /// Skor metode yang digunakan
+  nilaiMetode    Float?
+  /// Skor nilai tambah / inovasi
+  nilaiTambah    Float?
+  /// Skor urutan / presentasi
+  nilaiUrutan    Float?
+  /// Nilai Tugas Akhir 1 dari catatan
+  nilaiTa1       Float?
+  /// Total nilai dari semua komponen
+  nilaiTotal     Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notes")
+}
+
+// =============================================================================
+// LAPORAN (REPORT) MODEL
+// =============================================================================
+
+/// Model Report: Data laporan akhir siswa dari sheet "Lxipplg1/2/3"
+/// Berisi checklist tugas laporan dan skor akhir laporan
+model Report {
+  id          Int     @id @default(autoincrement())
+  studentId   Int
+  student     Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Semester: "Genap" atau "Ganjil"
+  semester    String
+  /// Tahun ajaran (contoh: "2025/2026")
+  tahunAjaran String
+
+  /// Asal SMP / Hobi siswa (kolom D, teks bebas, opsional)
+  asalSmp     String?
+
+  // ─── CHECKLIST TUGAS LAPORAN (Kolom H-K) ─────────────────────────────────
+  /// Checklist tugas laporan 1 (1 = selesai, 0 = belum)
+  checklistH  Boolean @default(false)
+  /// Checklist tugas laporan 2
+  checklistI  Boolean @default(false)
+  /// Checklist tugas laporan 3
+  checklistJ  Boolean @default(false)
+  /// Checklist tugas laporan 4
+  checklistK  Boolean @default(false)
+
+  /// Kolom L: Total skor laporan
+  skorLaporan Float?
+  /// Ranking siswa dalam kelas berdasarkan nilai akhir
+  ranking     Int?
+  /// Rata-rata nilai keseluruhan
+  rataRata    Float?
+  /// Status kelulusan akhir
+  statusKelulusan String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, semester, tahunAjaran])
+  @@map("reports")
+}
+
+// =============================================================================
+// IMPORT LOG MODEL
+// =============================================================================
+
+/// Model ImportLog: Log setiap kali guru melakukan import Excel
+/// Berguna untuk audit trail dan debugging
+model ImportLog {
+  id          Int      @id @default(autoincrement())
+  /// Nama file Excel yang diimport
+  namaFile    String
+  /// Status import: "SUCCESS" | "PARTIAL" | "FAILED"
+  status      String
+  /// Jumlah baris yang berhasil diimport
+  totalBerhasil Int    @default(0)
+  /// Jumlah baris yang diskip (kosong / error)
+  totalDiskip   Int    @default(0)
+  /// Jumlah baris yang gagal
+  totalGagal    Int    @default(0)
+  /// Detail error dalam format JSON (array of error messages)
+  errorDetails  String? @db.Text
+  /// ID user yang melakukan import
+  importedById  Int
+  createdAt     DateTime @default(now())
+
+  @@map("import_logs")
+}
