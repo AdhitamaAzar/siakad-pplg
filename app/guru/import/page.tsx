@@ -8,6 +8,7 @@
 // =============================================================================
 
 import type { Metadata } from "next";
+import { FileSpreadsheet } from "lucide-react";
 import ImportForm from "./ImportForm";
 
 export const metadata: Metadata = { title: "Import Excel — Guru" };
@@ -41,6 +42,27 @@ export default function GuruImportPage() {
             <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
           </div>
         ))}
+      </div>
+
+      {/* Download template bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-slate-800/60 bg-slate-900/40">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 shrink-0">
+            <FileSpreadsheet className="h-5 w-5 text-emerald-400" />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Template Resmi Excel</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Unduh template format import untuk memudahkan pemetaan kolom data.</p>
+          </div>
+        </div>
+        <a
+          href="/template_import_nilai.xlsx"
+          download
+          className="flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-xl text-xs font-semibold border border-slate-700/60 transition-colors shrink-0 cursor-pointer"
+        >
+          <span>Unduh Template</span>
+          <span>&darr;</span>
+        </a>
       </div>
 
       {/* Form import — client component */}

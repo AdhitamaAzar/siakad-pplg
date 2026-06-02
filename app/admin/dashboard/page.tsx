@@ -2,29 +2,17 @@
 // FILE: app/admin/dashboard/page.tsx
 // TUJUAN: Halaman dashboard administrator dengan data real dari PostgreSQL.
 //         Menampilkan:
-//         - 4 stat cards utama (total siswa, kelas, rata-rata nilai, ketuntasan)
-//         - Ringkasan per kelas (3 kelas XI PPLG)
-//         - Grafik interaktif perbandingan nilai/ketuntasan/kehadiran antar kelas
-//         - Tabel top 10 siswa berdasarkan nilaiRaport
+//         - 4 stat cards utama (total siswa, guru, kelas, mapel)
+//         - Tab Navigasi: Ikhtisar, Analisis Akademik, Peringkat & Kehadiran
 //
 //         Server Component: data di-fetch langsung di server tanpa API call.
-//         Semua query berjalan di server — aman, cepat, tidak expose DB ke client.
 // =============================================================================
 
 import type { Metadata } from "next";
-import {
-  Users,
-  School,
-  TrendingUp,
-  CheckCircle,
-  RefreshCw,
-} from "lucide-react";
-
+import { Users, School, RefreshCw, GraduationCap, BookOpen } from "lucide-react";
 import { getAdminDashboardData } from "@/lib/queries/dashboard";
-import StatCard         from "@/components/dashboard/StatCard";
-import GrafikNilaiKelas from "@/components/dashboard/GrafikNilaiKelas";
-import TopSiswaTable    from "@/components/dashboard/TopSiswaTable";
-import KelasStatRow     from "@/components/dashboard/KelasStatRow";
+import StatCard from "@/components/dashboard/StatCard";
+import AdminDashboardTabs from "@/components/dashboard/AdminDashboardTabs";
 
 export const metadata: Metadata = {
   title: "Dashboard Admin",
@@ -35,10 +23,6 @@ export const revalidate = 300;
 
 // ─── PAGE COMPONENT ───────────────────────────────────────────────────────────
 
-/**
- * Dashboard admin — Server Component yang fetch data langsung dari Prisma.
- * Tidak ada loading state di client; data sudah tersedia saat HTML dikirim.
- */
 export default async function AdminDashboardPage() {
   // Fetch semua data dashboard dalam satu panggilan (paralel query di dalam)
   const data = await getAdminDashboardData();
@@ -69,8 +53,8 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* ── SECTION 1: STAT CARDS ─────────────────────────────────────────── */}
-      <section aria-label="Ringkasan statistik utama">
+      {/* ── SECTION 1: STAT CARDS (STATIC DEMOGRAPHICS) ───────────────────── */}
+      <section aria-label="Demografi utama">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             label="Total Siswa"
@@ -81,70 +65,34 @@ export default async function AdminDashboardPage() {
             description="3 kelas XI PPLG aktif"
           />
           <StatCard
+            label="Total Guru"
+            value={data.totalGuru}
+            unit="guru"
+            icon={GraduationCap}
+            variant="sky"
+            description="Tenaga pengajar PPLG"
+          />
+          <StatCard
             label="Total Kelas"
             value={data.totalKelas}
             unit="kelas"
             icon={School}
-            variant="sky"
+            variant="indigo"
             description="XI PPLG 1, 2, dan 3"
           />
           <StatCard
-            label="Rata-rata Nilai"
-            value={data.rataRataGlobal}
-            icon={TrendingUp}
-            variant="emerald"
-            description={
-              data.rataRataGlobal >= 75
-                ? "Di atas KKM 75 ✓"
-                : "Di bawah KKM 75"
-            }
-          />
-          <StatCard
-            label="Siswa Tuntas"
-            value={`${data.persenTuntas}%`}
-            icon={CheckCircle}
-            variant={data.persenTuntas >= 75 ? "emerald" : "amber"}
-            description={`dari ${data.totalSiswa} total siswa`}
+            label="Total Mapel"
+            value={data.totalMapel}
+            unit="mapel"
+            icon={BookOpen}
+            variant="sky"
+            description="Kurikulum kompetensi"
           />
         </div>
       </section>
 
-      {/* ── SECTION 2: RINGKASAN PER KELAS ───────────────────────────────── */}
-      <section aria-label="Ringkasan statistik per kelas">
-        <div className="mb-3 flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-indigo-500" />
-          <h2 className="text-sm font-semibold text-slate-300">
-            Ringkasan Per Kelas
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {data.kelasStats.map((kelas, i) => (
-            <KelasStatRow key={kelas.id} kelas={kelas} index={i} />
-          ))}
-        </div>
-      </section>
-
-      {/* ── SECTION 3: GRAFIK PERBANDINGAN ───────────────────────────────── */}
-      <section aria-label="Grafik perbandingan statistik antar kelas">
-        <div className="mb-3 flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-indigo-500" />
-          <h2 className="text-sm font-semibold text-slate-300">
-            Grafik Perbandingan Kelas
-          </h2>
-        </div>
-        <GrafikNilaiKelas data={data.grafikData} />
-      </section>
-
-      {/* ── SECTION 4: TOP 10 SISWA ───────────────────────────────────────── */}
-      <section aria-label="Tabel peringkat siswa berprestasi">
-        <div className="mb-3 flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-amber-400" />
-          <h2 className="text-sm font-semibold text-slate-300">
-            Peringkat Siswa
-          </h2>
-        </div>
-        <TopSiswaTable data={data.topSiswa} />
-      </section>
+      {/* ── SECTION 2: INTERACTIVE TABS (PERFORMANCE & ANALYTICS) ─────────── */}
+      <AdminDashboardTabs data={data} />
 
     </div>
   );

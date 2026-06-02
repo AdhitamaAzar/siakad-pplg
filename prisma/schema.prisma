@@ -69,6 +69,7 @@ model Teacher {
   email  String?
 
   notes Note[]
+  classSubjects TeacherClassSubject[]
 
   @@map("teachers")
 }
@@ -88,6 +89,7 @@ model Class {
   /// Tahun ajaran (contoh: "2025/2026")
   tahunAjaran String  @default("2025/2026")
   students  Student[]
+  classSubjects TeacherClassSubject[]
 
   @@unique([namaKelas, tahunAjaran])
   @@map("classes")
@@ -129,6 +131,9 @@ model Grade {
   id          Int     @id @default(autoincrement())
   studentId   Int
   student     Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Mata pelajaran (opsional — NULL untuk data import Excel lama)
+  subjectId   Int?
+  subject     Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   /// Semester: "Genap" atau "Ganjil"
   semester    String
   /// Tahun ajaran (contoh: "2025/2026")
@@ -323,4 +328,38 @@ model ImportLog {
   createdAt     DateTime @default(now())
 
   @@map("import_logs")
+}
+
+// =============================================================================
+// SUBJECT & TEACHER_CLASS_SUBJECT MODELS
+// =============================================================================
+
+/// Model Subject: Data mata pelajaran yang diajarkan
+model Subject {
+  id        Int      @id @default(autoincrement())
+  /// Nama mata pelajaran (contoh: "Pemrograman Web", "Basis Data")
+  namaMapel String
+  /// Kode unik mata pelajaran (contoh: "PW-11", "BD-11")
+  kodeMapel String   @unique
+  /// Tingkat kelas mata pelajaran (contoh: 11)
+  tingkat   Int
+
+  teacherClassSubjects TeacherClassSubject[]
+  grades               Grade[]
+
+  @@map("subjects")
+}
+
+/// Model TeacherClassSubject: Menghubungkan Guru dengan Kelas dan Mapel yang diajar
+model TeacherClassSubject {
+  id        Int     @id @default(autoincrement())
+  teacherId Int
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  kelasId   Int
+  kelas     Class   @relation(fields: [kelasId], references: [id], onDelete: Cascade)
+  subjectId Int
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, kelasId, subjectId])
+  @@map("teacher_class_subjects")
 }

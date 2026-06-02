@@ -38,9 +38,20 @@ export default async function GuruLayout({
     redirect(`/${session.user.role}/dashboard`);
   }
 
-  // Ambil data kelas aktif untuk menu sidebar
+  // Ambil data kelas yang diajar oleh guru ini
+  const teacherRecord = await prisma.teacher.findUnique({
+    where: { userId: Number(session.user.id) },
+  });
+
   const classes = await prisma.class.findMany({
-    where: { tahunAjaran: "2025/2026" },
+    where: {
+      tahunAjaran: "2025/2026",
+      classSubjects: {
+        some: {
+          teacherId: teacherRecord?.id,
+        },
+      },
+    },
     select: { id: true, namaKelas: true },
     orderBy: { namaKelas: "asc" },
   });

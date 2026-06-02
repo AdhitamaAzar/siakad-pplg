@@ -1,14 +1,17 @@
 // =============================================================================
 // FILE: app/siswa/dashboard/page.tsx
-// TUJUAN: Dashboard siswa — ringkasan nilai, absensi, dan progress akademik.
+// TUJUAN: Dashboard siswa — ringkasan nilai, grafik progress, absensi,
+//         catatan guru terbaru, dan perkembangan akademik.
 //         Server Component dengan data Prisma berdasarkan session siswa.
 // =============================================================================
 
 import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { TrendingUp, CalendarCheck, Award, BookOpen, Star } from "lucide-react";
+import { TrendingUp, CalendarCheck, Award, BookOpen, Star, MessageSquare } from "lucide-react";
 import prisma from "@/lib/prisma";
+import Link from "next/link";
+import GrafikNilaiSiswa from "@/components/dashboard/GrafikNilaiSiswa";
 
 export const metadata: Metadata = { title: "Dashboard Siswa" };
 export const revalidate = 300;
@@ -49,6 +52,15 @@ export default async function SiswaDashboardPage() {
         where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
         take: 1,
       },
+      notes: {
+        orderBy: { createdAt: "desc" },
+        take: 3,
+        include: {
+          teacher: {
+            select: { nama: true },
+          },
+        },
+      },
     },
   });
 
@@ -81,8 +93,20 @@ export default async function SiswaDashboardPage() {
   const jam  = new Date().getHours();
   const sapa = jam < 11 ? "Selamat Pagi" : jam < 15 ? "Selamat Siang" : jam < 18 ? "Selamat Sore" : "Selamat Malam";
 
+  const componentsData = [
+    { name: "Github", nilai: grade?.nilaiGithub ?? null },
+    { name: "API", nilai: grade?.nilaiApi ?? null },
+    { name: "Admin", nilai: grade?.nilaiAdminPanel ?? null },
+    { name: "Landing", nilai: grade?.nilaiLandingPage ?? null },
+    { name: "Py", nilai: grade?.nilaiKagglePython ?? null },
+    { name: "SQL", nilai: grade?.nilaiKaggleSql ?? null },
+    { name: "ML", nilai: grade?.nilaiKaggleMl ?? null },
+    { name: "U.ML", nilai: grade?.nilaiUjianMl ?? null },
+    { name: "U.SQL", nilai: grade?.nilaiUjianSql ?? null },
+  ];
+
   return (
-    <div className="space-y-6 max-w-[900px]">
+    <div className="space-y-6 max-w-[1000px]">
 
       {/* ── GREETING ──────────────────────────────────────────────────── */}
       <div
@@ -140,8 +164,8 @@ export default async function SiswaDashboardPage() {
             {attendance ? `${attendance.persentaseHadir}%` : "—"}
           </p>
           <p className="text-xs font-semibold text-slate-300 mt-0.5">Kehadiran</p>
-          <p className="text-xs text-slate-600 mt-0.5">
-            {attendance ? `${attendance.totalHadir} dari ${attendance.totalHadir + attendance.totalTidakHadir} pertemuan` : "Belum ada data"}
+          <p className="text-xs text-slate-600 mt-0.5 truncate">
+            {attendance ? `${attendance.totalHadir} / ${attendance.totalHadir + attendance.totalTidakHadir} hadir` : "Belum ada data"}
           </p>
         </div>
 
@@ -155,6 +179,62 @@ export default async function SiswaDashboardPage() {
           </p>
           <p className="text-xs font-semibold text-slate-300 mt-0.5">Ranking Kelas</p>
           <p className="text-xs text-slate-600 mt-0.5">{student.kelas.namaKelas}</p>
+        </div>
+      </div>
+
+      {/* ── GRAFIK PERKEMBANGAN & CATATAN TERBARU ──────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <GrafikNilaiSiswa nilaiData={componentsData} />
+        </div>
+
+        {/* Catatan Terbaru */}
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <MessageSquare size={16} className="text-indigo-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Catatan Guru</h3>
+            </div>
+            
+            <div className="space-y-4 max-h-[17rem] overflow-y-auto pr-1">
+              {student.notes.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-xs text-slate-600">Belum ada catatan dari guru.</p>
+                </div>
+              ) : (
+                student.notes.map((note) => (
+                  <div key={note.id} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-200 truncate max-w-[70%]">
+                        {note.judulProyek || "Evaluasi"}
+                      </span>
+                      <span className="text-[9px] text-slate-600 shrink-0">
+                        {new Date(note.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
+                      {note.catatan}
+                    </p>
+                    <div className="flex justify-between items-center text-[10px] text-slate-500 pt-1 border-t border-slate-850">
+                      <span>Oleh: {note.teacher.nama}</span>
+                      {note.nilaiTotal !== null && (
+                        <span className="font-bold text-indigo-400">Skor: {note.nilaiTotal}</span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-800/60 text-center">
+            <Link
+              href="/siswa/catatan"
+              className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              Lihat Semua Catatan &rarr;
+            </Link>
+          </div>
         </div>
       </div>
 

@@ -79,9 +79,10 @@ async function hashPassword(password: string): Promise<string> {
 /**
  * Membuat data nilai contoh untuk seorang siswa
  * @param studentId - ID siswa di database
+ * @param subjectId - ID mata pelajaran di database
  * @returns Objek data nilai yang siap dimasukkan ke database
  */
-function buatNilaiContoh(studentId: number) {
+function buatNilaiContoh(studentId: number, subjectId: number) {
   // Generate nilai random yang realistis
   const randomNilai = (min: number, max: number): number =>
     Math.floor(Math.random() * (max - min + 1)) + min;
@@ -114,6 +115,7 @@ function buatNilaiContoh(studentId: number) {
 
   return {
     studentId,
+    subjectId,
     semester: SEMESTER,
     tahunAjaran: TAHUN_AJARAN,
     ...komponenNilai,
@@ -179,6 +181,19 @@ async function main(): Promise<void> {
   ]);
   console.log(`   ✅ Role dibuat: admin(${roleAdmin.id}), guru(${roleGuru.id}), siswa(${roleSiswa.id})`);
 
+  // ── STEP 1b: Buat Mapel Awal ────────────────────────────────────────────────
+  console.log("📚 Membuat mata pelajaran...");
+  const defaultSubject = await prisma.subject.upsert({
+    where: { kodeMapel: "PPLG" },
+    update: {},
+    create: {
+      namaMapel: "Pemrograman Perangkat Lunak dan Gim (PPLG)",
+      kodeMapel: "PPLG",
+      tingkat: 11,
+    },
+  });
+  console.log(`   ✅ Mapel dibuat: ${defaultSubject.namaMapel} (ID: ${defaultSubject.id})`);
+
   // ── STEP 2: Buat User Admin ────────────────────────────────────────────────
   console.log("\n👤 Membuat akun admin...");
   const adminPassword = await hashPassword("admin123");
@@ -240,6 +255,28 @@ async function main(): Promise<void> {
     console.log(`   ✅ Kelas dibuat: "${kelas.namaKelas}" (ID: ${kelas.id})`);
   }
 
+  // ── STEP 4b: Hubungkan Guru Fandik ke Kelas & Mapel ──────────────────────────
+  console.log("\n🔗 Menghubungkan Guru Fandik ke Kelas & Mapel...");
+  for (const kelasName of Object.keys(kelasMap)) {
+    const classId = kelasMap[kelasName];
+    await prisma.teacherClassSubject.upsert({
+      where: {
+        teacherId_kelasId_subjectId: {
+          teacherId: teacher.id,
+          kelasId: classId,
+          subjectId: defaultSubject.id,
+        },
+      },
+      update: {},
+      create: {
+        teacherId: teacher.id,
+        kelasId: classId,
+        subjectId: defaultSubject.id,
+      },
+    });
+    console.log(`   ✅ Ditugaskan mengajar: "Fandik Ariyanto" -> "${kelasName}" (Mapel: PPLG)`);
+  }
+
   // ── STEP 5: Buat 15 Siswa Contoh (5 per kelas) ───────────────────────────
   console.log("\n👨‍🎓 Membuat 15 siswa contoh (5 per kelas)...");
   let totalSiswaDbuat = 0;
@@ -283,7 +320,7 @@ async function main(): Promise<void> {
           },
         },
         update: {},
-        create: buatNilaiContoh(student.id),
+        create: buatNilaiContoh(student.id, defaultSubject.id),
       });
 
       // Buat data absensi contoh

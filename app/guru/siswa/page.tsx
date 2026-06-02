@@ -9,6 +9,8 @@ import type { Metadata } from "next";
 import { Users, Search } from "lucide-react";
 import prisma from "@/lib/prisma";
 import Link from "next/link";
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "Daftar Siswa — Guru" };
 
@@ -34,11 +36,27 @@ function NilaiBadge({ nilai }: { nilai: number | null }) {
 }
 
 export default async function GuruSiswaPage({ searchParams }: PageProps) {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
   const sp = await searchParams;
 
-  // Ambil semua kelas
+  const teacherRecord = await prisma.teacher.findUnique({
+    where: { userId: Number(session.user.id) },
+  });
+
+  // Ambil kelas yang diajar oleh guru ini
   const kelasList = await prisma.class.findMany({
-    where: { tahunAjaran: TAHUN_AJARAN },
+    where: {
+      tahunAjaran: TAHUN_AJARAN,
+      classSubjects: {
+        some: {
+          teacherId: teacherRecord?.id,
+        },
+      },
+    },
     orderBy: { namaKelas: "asc" },
   });
 

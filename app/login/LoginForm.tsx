@@ -18,6 +18,7 @@ interface FormState {
   username: string;
   password: string;
   showPassword: boolean;
+  rememberMe: boolean;
   error: string;
 }
 
@@ -47,6 +48,7 @@ export default function LoginForm() {
     username:     "",
     password:     "",
     showPassword: false,
+    rememberMe:   false,
     error:        "",
   });
 
@@ -201,6 +203,22 @@ export default function LoginForm() {
             {form.showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
+      </div>
+
+      {/* ── Remember Me Checkbox ─────────────────────────────────────── */}
+      <div className="flex items-center justify-between pb-1">
+        <label className="flex items-center gap-2 cursor-pointer group select-none">
+          <input
+            type="checkbox"
+            checked={form.rememberMe}
+            onChange={(e) => setForm((prev) => ({ ...prev, rememberMe: e.target.checked }))}
+            disabled={isPending}
+            className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500/20 focus:ring-offset-slate-900 focus:ring-2"
+          />
+          <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">
+            Ingat saya di perangkat ini
+          </span>
+        </label>
       </div>
 
       {/* ── Submit Button ────────────────────────────────────────────── */}

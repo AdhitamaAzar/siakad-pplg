@@ -98,11 +98,17 @@ export default function ImportAdminPage() {
             <p className="text-xs text-slate-500 mb-3">
               Gunakan template resmi SIAKAD untuk memastikan format import yang benar.
             </p>
-            <div className="flex items-center gap-2 rounded-lg bg-slate-800/60 px-3 py-2">
-              <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
-              <span className="text-xs text-slate-300 flex-1">template_import_nilai.xlsx</span>
-              <span className="text-[10px] text-slate-600">— tersedia dari guru</span>
-            </div>
+            <a
+              href="/template_import_nilai.xlsx"
+              download
+              className="flex items-center gap-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 px-3 py-2 border border-slate-700/40 hover:border-slate-650/40 transition-colors group cursor-pointer"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-emerald-400 group-hover:scale-105 transition-transform" />
+              <span className="text-xs text-slate-300 group-hover:text-white flex-1 transition-colors">
+                template_import_nilai.xlsx
+              </span>
+              <span className="text-[10px] text-indigo-400 group-hover:text-indigo-300 font-medium">Unduh &darr;</span>
+            </a>
           </div>
         </div>
 

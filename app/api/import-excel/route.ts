@@ -147,7 +147,187 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  // Parse multipart form
+  // ── JSON PAYLOAD HANDLER (Client-side parsed & validated) ──────────────────
+  if (req.headers.get("content-type")?.includes("application/json")) {
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ ok: false, message: "Gagal membaca data JSON." }, { status: 400 });
+    }
+
+    const { semester, tahunAjaran, subjectId, sheets } = body;
+    if (!semester || !tahunAjaran || !sheets || !Array.isArray(sheets)) {
+      return NextResponse.json({ ok: false, message: "Parameter tidak lengkap." }, { status: 400 });
+    }
+
+    const sheetResults = [];
+
+    // Tentukan mapel target
+    let targetSubjectId = Number(subjectId);
+    if (isNaN(targetSubjectId)) {
+      const defaultSubject = await prisma.subject.upsert({
+        where:  { kodeMapel: "PPLG-IMPORT" },
+        update: {},
+        create: {
+          namaMapel: "Rekayasa Perangkat Lunak",
+          kodeMapel: "PPLG-IMPORT",
+          tingkat:   11,
+        },
+      });
+      targetSubjectId = defaultSubject.id;
+    }
+
+    for (const sheet of sheets) {
+      const { sheetName, targetClassId, rows } = sheet;
+      const classId = Number(targetClassId);
+
+      if (isNaN(classId) || !rows || !Array.isArray(rows)) {
+        sheetResults.push({
+          sheet: sheetName || "Unknown",
+          success: 0,
+          skipped: rows?.length || 0,
+          errors: ["Target kelas tidak valid atau data kosong."],
+        });
+        continue;
+      }
+
+      let success = 0;
+      let skipped = 0;
+      const rowErrors: string[] = [];
+
+      for (const row of rows) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            const cleanNisStr = String(row.nis).replace(/\s+/g, "").trim();
+            const username = cleanNisStr.split("/")[0]!;
+            let user = await tx.user.findUnique({ where: { username } });
+
+            if (!user) {
+              if (session.user.role !== "admin") {
+                throw new Error(`Siswa dengan NIS ${cleanNisStr} belum terdaftar. Silakan hubungi Admin.`);
+              }
+
+              const roleSiswa = await tx.role.findUnique({ where: { name: "siswa" } });
+              if (!roleSiswa) {
+                throw new Error("Role 'siswa' tidak ditemukan di database.");
+              }
+
+              const hashedPassword = await bcrypt.hash(username, 12);
+              user = await tx.user.create({
+                data: {
+                  username,
+                  password: hashedPassword,
+                  roleId: roleSiswa.id,
+                },
+              });
+            }
+
+            const student = await tx.student.upsert({
+              where:  { nis: cleanNisStr },
+              update: { nama: row.nama, kelasId: classId, userId: user.id },
+              create: {
+                nis:     cleanNisStr,
+                nama:    row.nama,
+                kelasId: classId,
+                userId:  user.id,
+              },
+            });
+
+            // Hitung derived values
+            const vals = Object.values(row.nilai).map((v) => (v === "" || v === undefined ? null : Number(v)));
+            const rataRata = hitungRataRata(vals);
+            const nilaiRaport = hitungNilaiRaport(rataRata);
+            const predikat = hitungPredikat(nilaiRaport);
+            const totalKosong = vals.filter((v) => v === null).length;
+            const statusTuntas = nilaiRaport !== null && nilaiRaport >= 75 ? "TUNTAS" : nilaiRaport !== null ? "TIDAK TUNTAS" : null;
+
+            await tx.grade.upsert({
+              where: {
+                studentId_semester_tahunAjaran: {
+                  studentId:   student.id,
+                  semester,
+                  tahunAjaran,
+                },
+              },
+              update: {
+                nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : undefined,
+                nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : undefined,
+                nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : undefined,
+                nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : undefined,
+                nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : undefined,
+                nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : undefined,
+                nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : undefined,
+                nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : undefined,
+                nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : undefined,
+                rataRata,
+                nilaiRaport,
+                predikat,
+                jumlahNilaiKosong:  totalKosong,
+                statusTuntas,
+              },
+              create: {
+                studentId:          student.id,
+                subjectId:          targetSubjectId,
+                semester,
+                tahunAjaran,
+                nilaiGithub:        numOrNull(row.nilai.github),
+                nilaiApi:           numOrNull(row.nilai.api),
+                nilaiAdminPanel:    numOrNull(row.nilai.adminPanel),
+                nilaiLandingPage:   numOrNull(row.nilai.landingPage),
+                nilaiKagglePython:  numOrNull(row.nilai.kagglePython),
+                nilaiKaggleSql:     numOrNull(row.nilai.kaggleSql),
+                nilaiKaggleMl:      numOrNull(row.nilai.kaggleMl),
+                nilaiUjianMl:       numOrNull(row.nilai.ujianMl),
+                nilaiUjianSql:      numOrNull(row.nilai.ujianSql),
+                rataRata,
+                nilaiRaport,
+                predikat,
+                jumlahNilaiKosong:  totalKosong,
+                statusTuntas,
+              },
+            });
+          });
+
+          success++;
+        } catch (err: any) {
+          rowErrors.push(`Siswa ${row.nama} (${row.nis}): ${err.message}`);
+          skipped++;
+        }
+      }
+
+      sheetResults.push({ sheet: sheetName, success, skipped, errors: rowErrors });
+    }
+
+    const totalSuccess = sheetResults.reduce((s, r) => s + r.success, 0);
+    const totalError   = sheetResults.reduce((s, r) => s + r.errors.length, 0);
+    const totalSkipped = sheetResults.reduce((s, r) => s + r.skipped, 0);
+    const ok = totalError === 0 || totalSuccess > 0;
+
+    try {
+      await prisma.importLog.create({
+        data: {
+          namaFile: `JSON_IMPORT_${new Date().toISOString().slice(0, 10)}.json`,
+          status: totalError === 0 ? "SUCCESS" : totalSuccess > 0 ? "PARTIAL" : "FAILED",
+          totalBerhasil: totalSuccess,
+          totalDiskip: totalSkipped,
+          totalGagal: totalError,
+          errorDetails: totalError > 0 ? JSON.stringify(sheetResults.flatMap((r) => r.errors)) : null,
+          importedById: Number(session.user.id),
+        },
+      });
+    } catch (logErr) {
+      console.error("Gagal mencatat log import:", logErr);
+    }
+
+    return NextResponse.json({
+      ok,
+      message: `Import selesai: ${totalSuccess} siswa berhasil diproses${totalError > 0 ? `, ${totalError} error` : ""}.`,
+      sheets:  sheetResults,
+    });
+  }
+
+  // ── FORMDATA FALLBACK HANDLER (Original flow) ──────────────────────────────
   let file: File;
   let semester: string;
   let tahunAjaran: string;
@@ -171,6 +351,17 @@ export async function POST(req: NextRequest) {
 
   // Proses setiap sheet nilai
   const sheetResults = [];
+
+  // Pastikan subject default untuk import Excel ada di database
+  const defaultSubject = await prisma.subject.upsert({
+    where:  { kodeMapel: "PPLG-IMPORT" },
+    update: {},
+    create: {
+      namaMapel: "Rekayasa Perangkat Lunak",
+      kodeMapel: "PPLG-IMPORT",
+      tingkat:   11,
+    },
+  });
 
   for (const [sheetName, namaKelas] of Object.entries(SHEET_KELAS)) {
     const ws = workbook.Sheets[sheetName];
@@ -279,6 +470,7 @@ export async function POST(req: NextRequest) {
             },
             create: {
               studentId:          student.id,
+              subjectId:          defaultSubject.id,
               semester,
               tahunAjaran,
               nilaiGithub:        row.nilai.github,

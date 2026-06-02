@@ -99,6 +99,11 @@ export const adminNav: SidebarConfig = {
           icon: School,
         },
         {
+          label: "Mata Pelajaran",
+          href: "/admin/mapel",
+          icon: ClipboardList,
+        },
+        {
           label: "Guru",
           href: "/admin/guru",
           icon: GraduationCap,

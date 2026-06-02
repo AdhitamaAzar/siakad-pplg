@@ -33,6 +33,7 @@ import type { GrafikKelasData } from "@/lib/queries/dashboard";
 interface GrafikNilaiKelasProps {
   /** Data grafik per kelas dari server */
   data: GrafikKelasData[];
+  type?: "academic" | "attendance" | "all";
 }
 
 type ChartTab = "nilai" | "ketuntasan" | "kehadiran";
@@ -56,7 +57,7 @@ function CustomTooltip({
       bg-slate-800/95 border border-slate-700/80
       rounded-xl shadow-2xl p-3 text-sm
       backdrop-blur-sm
-    ">
+     border-white/5">
       <p className="font-semibold text-white mb-2 text-xs uppercase tracking-wide">
         {label}
       </p>
@@ -70,7 +71,7 @@ function CustomTooltip({
           <span className="font-semibold text-white text-xs">
             {typeof entry.value === "number"
               ? entry.name.includes("%") || entry.name.includes("Hadir")
-                ? `${entry.value}%`
+                ? `${entry.value.toFixed(1)}%`
                 : entry.value
               : entry.value}
           </span>
@@ -119,8 +120,10 @@ const KELAS_COLORS = ["#6366f1", "#10b981", "#f59e0b"];
  *
  * @param data - Array data per kelas dari server query
  */
-export default function GrafikNilaiKelas({ data }: GrafikNilaiKelasProps) {
-  const [activeTab, setActiveTab] = useState<ChartTab>("nilai");
+export default function GrafikNilaiKelas({ data, type = "all" }: GrafikNilaiKelasProps) {
+  const [activeTab, setActiveTab] = useState<ChartTab>(
+    type === "attendance" ? "kehadiran" : "nilai"
+  );
 
   return (
     <div className="
@@ -131,7 +134,11 @@ export default function GrafikNilaiKelas({ data }: GrafikNilaiKelasProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
           <h3 className="text-base font-bold text-white">
-            Perbandingan Statistik Kelas
+            {type === "academic"
+              ? "Grafik Nilai Akademik & Ketuntasan"
+              : type === "attendance"
+              ? "Grafik Kehadiran / Absensi Kelas"
+              : "Perbandingan Statistik Kelas"}
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Semester Genap 2025/2026 — 3 kelas XI PPLG
@@ -139,26 +146,30 @@ export default function GrafikNilaiKelas({ data }: GrafikNilaiKelasProps) {
         </div>
 
         {/* Tab switcher */}
-        <div className="flex items-center gap-1 bg-slate-800/60 rounded-xl p-1">
-          <TabButton
-            active={activeTab === "nilai"}
-            onClick={() => setActiveTab("nilai")}
-          >
-            Rata-rata Nilai
-          </TabButton>
-          <TabButton
-            active={activeTab === "ketuntasan"}
-            onClick={() => setActiveTab("ketuntasan")}
-          >
-            Ketuntasan
-          </TabButton>
-          <TabButton
-            active={activeTab === "kehadiran"}
-            onClick={() => setActiveTab("kehadiran")}
-          >
-            Kehadiran
-          </TabButton>
-        </div>
+        {type !== "attendance" && (
+          <div className="flex items-center gap-1 bg-slate-800/60 rounded-xl p-1">
+            <TabButton
+              active={activeTab === "nilai"}
+              onClick={() => setActiveTab("nilai")}
+            >
+              Rata-rata Nilai
+            </TabButton>
+            <TabButton
+              active={activeTab === "ketuntasan"}
+              onClick={() => setActiveTab("ketuntasan")}
+            >
+              Ketuntasan
+            </TabButton>
+            {type === "all" && (
+              <TabButton
+                active={activeTab === "kehadiran"}
+                onClick={() => setActiveTab("kehadiran")}
+              >
+                Kehadiran
+              </TabButton>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Chart area */}

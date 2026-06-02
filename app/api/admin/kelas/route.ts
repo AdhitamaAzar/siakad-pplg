@@ -96,3 +96,21 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+// ─── GET: AMBIL SEMUA KELAS ──────────────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user || !["admin", "guru"].includes(session.user.role)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const classes = await prisma.class.findMany({
+      where: { tahunAjaran: TAHUN_AJARAN },
+      orderBy: { namaKelas: "asc" },
+    });
+    return NextResponse.json({ ok: true, classes });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

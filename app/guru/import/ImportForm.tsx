@@ -1,91 +1,341 @@
 // =============================================================================
 // FILE: app/guru/import/ImportForm.tsx
-// TUJUAN: Form upload Excel — Client Component.
-//         - Drag & drop zone dengan visual feedback
-//         - Preview nama file & ukuran sebelum upload
-//         - Progress bar + log hasil import per sheet
-//         - Memanggil POST /api/import-excel
+// TUJUAN: Form upload & import Excel interaktif (Client Component).
+//         - Client-side Excel parsing menggunakan SheetJS (xlsx)
+//         - Mapping kolom otomatis & manual per sheet
+//         - Preview data & validasi client-side sebelum upload
+//         - Pilihan mata pelajaran target
+//         - Progress bar impor per sheet
+//         - Log hasil impor lengkap (sukses, skip, error)
 // =============================================================================
 
 "use client";
 
-import { useState, useRef, useCallback, useTransition } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
-  Upload, FileSpreadsheet, X, CheckCircle, AlertCircle,
-  Loader2, ChevronDown, ChevronRight
+  Upload, FileSpreadsheet, X, CheckCircle, AlertCircle, Loader2,
+  ChevronDown, ChevronRight, Settings, ArrowRight, Check, AlertTriangle, Play
 } from "lucide-react";
+import * as XLSX from "xlsx";
 
-// ─── TYPES ────────────────────────────────────────────────────────────────────
+// ─── TYPES & CONSTANTS ────────────────────────────────────────────────────────
 
-interface SheetResult {
-  sheet:   string;
-  success: number;
-  skipped: number;
-  errors:  string[];
+const DB_FIELDS = [
+  { key: "nis", label: "NIS (Wajib)", required: true, matchers: ["nis", "no induk", "nomor induk"] },
+  { key: "nama", label: "Nama (Wajib)", required: true, matchers: ["nama", "nama siswa", "nama lengkap"] },
+  { key: "nilaiGithub", label: "Nilai Github", required: false, matchers: ["github", "portofolio", "nilai github", "portfolio"] },
+  { key: "nilaiApi", label: "Nilai API", required: false, matchers: ["api", "nilai api", "tugas api"] },
+  { key: "nilaiAdminPanel", label: "Nilai Admin Panel", required: false, matchers: ["admin", "admin panel", "nilai admin panel"] },
+  { key: "nilaiLandingPage", label: "Nilai Landing Page", required: false, matchers: ["landing", "landing page", "nilai landing page"] },
+  { key: "nilaiKagglePython", label: "Kaggle Python", required: false, matchers: ["kaggle python", "python"] },
+  { key: "nilaiKaggleSql", label: "Kaggle SQL", required: false, matchers: ["kaggle sql", "sql"] },
+  { key: "nilaiKaggleMl", label: "Kaggle ML", required: false, matchers: ["kaggle ml", "ml"] },
+  { key: "nilaiUjianMl", label: "Ujian ML", required: false, matchers: ["ujian ml", "ujian machine learning"] },
+  { key: "nilaiUjianSql", label: "Ujian SQL", required: false, matchers: ["ujian sql"] },
+] as const;
+
+interface ExcelSheetData {
+  sheetName: string;
+  headers: string[];
+  rows: any[];
+  isSelected: boolean;
+  targetClassId: string;
+  columnMap: Record<string, string>; // dbField -> excelHeader
+  validationErrors: string[];
 }
 
 interface ImportResult {
-  ok:      boolean;
+  ok: boolean;
   message: string;
-  sheets?: SheetResult[];
-  error?:  string;
+  sheets?: Array<{
+    sheet: string;
+    success: number;
+    skipped: number;
+    errors: string[];
+  }>;
 }
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export default function ImportForm() {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [isPending, startTransition] = useTransition();
-  const [file,       setFile]   = useState<File | null>(null);
-  const [isDragging, setDragging] = useState(false);
-  const [result,     setResult] = useState<ImportResult | null>(null);
-  const [expanded,   setExpanded] = useState<Record<string, boolean>>({});
-  const [semester,   setSemester] = useState("Genap");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [defaultSubjectId, setDefaultSubjectId] = useState<string>("");
+  const [semester, setSemester] = useState("Genap");
   const [tahunAjaran, setTahunAjaran] = useState("2025/2026");
 
-  // ── File handlers ────────────────────────────────────────────────────────
+  // Flow states: 'upload' | 'configure' | 'preview' | 'importing' | 'result'
+  const [step, setStep] = useState<"upload" | "configure" | "preview" | "importing" | "result">("upload");
+  const [file, setFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [sheets, setSheets] = useState<ExcelSheetData[]>([]);
+  const [currentSheetIdx, setCurrentSheetIdx] = useState<number>(0);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0, sheetName: "" });
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
 
-  function handleFile(f: File) {
-    if (!f.name.endsWith(".xlsx") && !f.name.endsWith(".xls")) {
-      setResult({ ok: false, message: "Hanya file Excel (.xlsx / .xls) yang didukung.", error: "FORMAT" });
-      return;
-    }
-    setFile(f);
-    setResult(null);
-  }
+  // Fetch metadata kelas & mapel
+  useEffect(() => {
+    fetch("/api/admin/kelas")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok && data.classes) setClasses(data.classes);
+      })
+      .catch((err) => console.error("Gagal mengambil data kelas:", err));
 
-  const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragging(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    fetch("/api/admin/mapel")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok && data.subjects) {
+          setSubjects(data.subjects);
+          const def = data.subjects.find((s: any) => s.kodeMapel === "PPLG-IMPORT");
+          if (def) setDefaultSubjectId(String(def.id));
+          else if (data.subjects.length > 0) setDefaultSubjectId(String(data.subjects[0].id));
+        }
+      })
+      .catch((err) => console.error("Gagal mengambil data mapel:", err));
   }, []);
 
-  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+  // ─── FILE PARSING ──────────────────────────────────────────────────────────
+
+  const processExcelFile = useCallback((uploadedFile: File) => {
+    setFile(uploadedFile);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target?.result as ArrayBuffer);
+      const workbook = XLSX.read(data, { type: "array" });
+      
+      const parsedSheets: ExcelSheetData[] = workbook.SheetNames.map((sheetName) => {
+        const ws = workbook.Sheets[sheetName];
+        const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+        
+        // Asumsi header berada pada baris ke-5 (index 4) atau cari baris pertama yang berisi NIS
+        let headerRowIdx = 4;
+        let headers: string[] = [];
+        
+        if (aoa.length > 0) {
+          // Cari baris yang mengandung text 'nis' atau 'nama' untuk dijadikan header
+          for (let i = 0; i < Math.min(10, aoa.length); i++) {
+            const row = aoa[i];
+            if (row && row.some((cell: any) => String(cell).toLowerCase().includes("nis"))) {
+              headerRowIdx = i;
+              break;
+            }
+          }
+          headers = (aoa[headerRowIdx] as string[]) || [];
+        }
+
+        // Ambil data baris setelah header
+        const rows: any[] = [];
+        for (let i = headerRowIdx + 1; i < aoa.length; i++) {
+          const row = aoa[i];
+          if (row && row.some((cell: any) => cell !== "")) {
+            // Mapping array baris ke object berpola key: headerName, value: cellValue
+            const rowObj: Record<string, any> = {};
+            headers.forEach((h, idx) => {
+              rowObj[h] = row[idx] !== undefined ? row[idx] : "";
+            });
+            rows.push(rowObj);
+          }
+        }
+
+        // Auto-match Target Kelas berdasarkan nama sheet (contoh: "xipplg1" -> "XI PPLG 1")
+        let matchedClassId = "";
+        const cleanSheetName = sheetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const matchedClass = classes.find((c) => {
+          const cleanClassName = c.namaKelas.toLowerCase().replace(/[^a-z0-9]/g, "");
+          return cleanClassName === cleanSheetName || cleanSheetName.includes(cleanClassName) || cleanClassName.includes(cleanSheetName);
+        });
+        if (matchedClass) matchedClassId = String(matchedClass.id);
+
+        // Auto-mapping kolom otomatis
+        const columnMap: Record<string, string> = {};
+        DB_FIELDS.forEach((field) => {
+          const matchedHeader = headers.find((h) =>
+            field.matchers.some((matcher) => String(h).toLowerCase().trim() === matcher)
+          );
+          if (matchedHeader) {
+            columnMap[field.key] = matchedHeader;
+          } else {
+            // Fallback sederhana jika tidak ada exact match
+            const fallbackHeader = headers.find((h) =>
+              field.matchers.some((matcher) => String(h).toLowerCase().includes(matcher))
+            );
+            columnMap[field.key] = fallbackHeader || "";
+          }
+        });
+
+        return {
+          sheetName,
+          headers,
+          rows,
+          isSelected: true,
+          targetClassId: matchedClassId,
+          columnMap,
+          validationErrors: [],
+        };
+      });
+
+      setSheets(parsedSheets);
+      setStep("configure");
+    };
+    reader.readAsArrayBuffer(uploadedFile);
+  }, [classes]);
+
+  // ─── FILE DRAG & DROP HANDLERS ─────────────────────────────────────────────
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    setDragging(true);
-  }
+    setIsDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f && (f.name.endsWith(".xlsx") || f.name.endsWith(".xls"))) {
+      processExcelFile(f);
+    }
+  }, [processExcelFile]);
 
-  // ── Submit ───────────────────────────────────────────────────────────────
+  // ─── VALIDATION ────────────────────────────────────────────────────────────
 
-  function handleSubmit() {
-    if (!file) return;
+  const validateAllSheets = () => {
+    const updatedSheets = sheets.map((sheet) => {
+      if (!sheet.isSelected) return sheet;
 
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("semester", semester);
-      formData.append("tahunAjaran", tahunAjaran);
+      const errors: string[] = [];
+      if (!sheet.targetClassId) {
+        errors.push("Target kelas belum ditentukan.");
+      }
+
+      // Validasi kolom wajib NIS dan Nama
+      if (!sheet.columnMap.nis) {
+        errors.push("Kolom NIS belum dipetakan.");
+      }
+      if (!sheet.columnMap.nama) {
+        errors.push("Kolom Nama belum dipetakan.");
+      }
+
+      sheet.rows.forEach((row, idx) => {
+        const nisVal = sheet.columnMap.nis ? row[sheet.columnMap.nis] : "";
+        const namaVal = sheet.columnMap.nama ? row[sheet.columnMap.nama] : "";
+
+        if (!nisVal) {
+          errors.push(`Baris ${idx + 1}: NIS kosong.`);
+        }
+        if (!namaVal) {
+          errors.push(`Baris ${idx + 1}: Nama kosong.`);
+        }
+
+        // Validasi nilai harus 0 - 100
+        DB_FIELDS.forEach((f) => {
+          if (f.key !== "nis" && f.key !== "nama" && sheet.columnMap[f.key]) {
+            const val = row[sheet.columnMap[f.key]];
+            if (val !== "" && val !== null && val !== undefined) {
+              const num = Number(val);
+              if (isNaN(num) || num < 0 || num > 100) {
+                errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${f.label} tidak valid (${val}). Harus 0-100.`);
+              }
+            }
+          }
+        });
+      });
+
+      return { ...sheet, validationErrors: errors };
+    });
+
+    setSheets(updatedSheets);
+    
+    // Tentukan sheet pertama yang aktif untuk di-preview
+    const firstSelectedIdx = updatedSheets.findIndex((s) => s.isSelected);
+    if (firstSelectedIdx !== -1) {
+      setCurrentSheetIdx(firstSelectedIdx);
+    }
+    setStep("preview");
+  };
+
+  // ─── SUBMIT / IMPORT EXECUTION ─────────────────────────────────────────────
+
+  const handleStartImport = async () => {
+    setStep("importing");
+    const activeSheets = sheets.filter((s) => s.isSelected);
+    setImportProgress({ current: 0, total: activeSheets.length, sheetName: "" });
+
+    const finalResults: NonNullable<ImportResult["sheets"]> = [];
+    let isSuccessGlobal = true;
+
+    for (let i = 0; i < activeSheets.length; i++) {
+      const sheet = activeSheets[i]!;
+      setImportProgress({ current: i + 1, total: activeSheets.length, sheetName: sheet.sheetName });
+
+      // Transform rows sesuai pemetaan kolom
+      const mappedRows = sheet.rows.map((row) => {
+        const nilai: Record<string, number | null> = {};
+        DB_FIELDS.forEach((f) => {
+          if (f.key !== "nis" && f.key !== "nama") {
+            const excelHeader = sheet.columnMap[f.key];
+            const rawVal = excelHeader ? row[excelHeader] : "";
+            nilai[f.key.replace("nilai", "").replace(/^\w/, (c) => c.toLowerCase())] =
+              rawVal !== "" ? Number(rawVal) : null;
+          }
+        });
+
+        return {
+          nis: String(row[sheet.columnMap.nis || ""]).replace(/\s+/g, "").trim(),
+          nama: String(row[sheet.columnMap.nama || ""]).trim(),
+          nilai,
+        };
+      });
 
       try {
-        const res  = await fetch("/api/import-excel", { method: "POST", body: formData });
-        const data = (await res.json()) as ImportResult;
-        setResult(data);
-      } catch {
-        setResult({ ok: false, message: "Gagal menghubungi server.", error: "NETWORK" });
+        const res = await fetch("/api/import-excel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            semester,
+            tahunAjaran,
+            subjectId: defaultSubjectId ? Number(defaultSubjectId) : undefined,
+            sheets: [
+              {
+                sheetName: sheet.sheetName,
+                targetClassId: Number(sheet.targetClassId),
+                rows: mappedRows,
+              },
+            ],
+          }),
+        });
+
+        const data = await res.json();
+        if (data.ok && data.sheets) {
+          finalResults.push(...data.sheets);
+        } else {
+          isSuccessGlobal = false;
+          finalResults.push({
+            sheet: sheet.sheetName,
+            success: 0,
+            skipped: sheet.rows.length,
+            errors: [data.message || "Gagal mengimpor sheet ini."],
+          });
+        }
+      } catch (err: any) {
+        isSuccessGlobal = false;
+        finalResults.push({
+          sheet: sheet.sheetName,
+          success: 0,
+          skipped: sheet.rows.length,
+          errors: [err.message || "Koneksi terputus saat mengimpor."],
+        });
       }
+    }
+
+    setImportResult({
+      ok: isSuccessGlobal,
+      message: isSuccessGlobal
+        ? "Import Excel berhasil diselesaikan!"
+        : "Proses import selesai dengan beberapa kesalahan.",
+      sheets: finalResults,
     });
-  }
+    setStep("result");
+  };
+
+  // ─── HELPERS ───────────────────────────────────────────────────────────────
 
   const formatSize = (bytes: number) =>
     bytes > 1024 * 1024
@@ -93,201 +343,418 @@ export default function ImportForm() {
       : `${(bytes / 1024).toFixed(0)} KB`;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
 
-      {/* ── SETTINGS ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-slate-400">Tahun Ajaran</label>
-          <input 
-            type="text" 
-            value={tahunAjaran} 
-            onChange={(e) => setTahunAjaran(e.target.value)}
-            className="w-full bg-slate-900/50 border border-slate-700/60 rounded-xl px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:bg-slate-900 transition-colors"
-            placeholder="Contoh: 2025/2026"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-slate-400">Semester</label>
-          <select 
-            value={semester}
-            onChange={(e) => setSemester(e.target.value)}
-            className="w-full bg-slate-900/50 border border-slate-700/60 rounded-xl px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:bg-slate-900 transition-colors"
-          >
-            <option value="Ganjil">Ganjil</option>
-            <option value="Genap">Genap</option>
-          </select>
-        </div>
-      </div>
-
-      {/* ── DROP ZONE ─────────────────────────────────────────────────── */}
-      <div
-        id="excel-drop-zone"
-        role="button"
-        tabIndex={0}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={() => setDragging(false)}
-        onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
-        onClick={() => inputRef.current?.click()}
-        className={`
-          relative rounded-2xl border-2 border-dashed transition-all duration-200
-          flex flex-col items-center justify-center gap-3 py-14 cursor-pointer
-          ${isDragging
-            ? "border-indigo-400 bg-indigo-500/10 scale-[1.01]"
-            : file
-            ? "border-emerald-500/40 bg-emerald-500/5"
-            : "border-slate-700/60 bg-slate-900/40 hover:border-slate-600 hover:bg-slate-900/60"}
-        `}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleFile(f);
-          }}
-        />
-
-        {file ? (
-          <>
-            <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 flex items-center justify-center border border-emerald-500/30">
-              <FileSpreadsheet size={28} className="text-emerald-400" />
-            </div>
-            <div className="text-center">
-              <p className="font-semibold text-emerald-300 text-sm">{file.name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">{formatSize(file.size)}</p>
-            </div>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setFile(null); setResult(null); }}
-              className="absolute top-3 right-3 p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
-              aria-label="Hapus file"
-            >
-              <X size={14} />
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="w-14 h-14 rounded-2xl bg-slate-800/80 flex items-center justify-center border border-slate-700/60">
-              <Upload size={24} className="text-slate-500" />
-            </div>
-            <div className="text-center">
-              <p className="font-semibold text-slate-300 text-sm">
-                {isDragging ? "Lepaskan file di sini" : "Drag & drop file Excel"}
-              </p>
-              <p className="text-xs text-slate-600 mt-0.5">
-                atau klik untuk memilih · <span className="text-indigo-400">NilaiGenap2526.xlsx</span>
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* ── TOMBOL IMPORT ─────────────────────────────────────────────── */}
-      <button
-        id="import-submit-btn"
-        type="button"
-        onClick={handleSubmit}
-        disabled={!file || isPending}
-        className={`
-          w-full py-3 px-6 rounded-xl font-semibold text-sm
-          flex items-center justify-center gap-2
-          transition-all duration-200
-          disabled:opacity-50 disabled:cursor-not-allowed
-        `}
-        style={{
-          background: !file || isPending
-            ? "rgba(99,102,241,0.3)"
-            : "linear-gradient(135deg, #6366f1, #4f46e5)",
-          boxShadow: !file || isPending ? "none" : "0 4px 20px rgba(99,102,241,0.3)",
-          color: "white",
-        }}
-      >
-        {isPending ? (
-          <>
-            <Loader2 size={16} className="animate-spin" />
-            Memproses data...
-          </>
-        ) : (
-          <>
-            <Upload size={16} />
-            {file ? `Import "${file.name}"` : "Pilih file terlebih dahulu"}
-          </>
-        )}
-      </button>
-
-      {/* ── HASIL IMPORT ──────────────────────────────────────────────── */}
-      {result && (
-        <div className={`
-          rounded-2xl border p-5 space-y-4
-          ${result.ok
-            ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-rose-500/30 bg-rose-500/5"}
-        `}>
-          {/* Summary */}
-          <div className="flex items-start gap-3">
-            {result.ok
-              ? <CheckCircle size={18} className="text-emerald-400 mt-0.5 shrink-0" />
-              : <AlertCircle size={18} className="text-rose-400 mt-0.5 shrink-0" />
-            }
-            <div>
-              <p className={`font-semibold text-sm ${result.ok ? "text-emerald-300" : "text-rose-300"}`}>
-                {result.message}
-              </p>
-              {result.error && (
-                <p className="text-xs text-rose-400/70 mt-0.5">{result.error}</p>
-              )}
-            </div>
+      {/* ── SETTINGS GLOBAL ── */}
+      {step !== "importing" && step !== "result" && (
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Tahun Ajaran</label>
+            <input
+              type="text"
+              value={tahunAjaran}
+              onChange={(e) => setTahunAjaran(e.target.value)}
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500 focus:bg-slate-950 transition-colors"
+              placeholder="Contoh: 2025/2026"
+            />
           </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Semester</label>
+            <select
+              value={semester}
+              onChange={(e) => setSemester(e.target.value)}
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500 focus:bg-slate-950 transition-colors"
+            >
+              <option value="Ganjil">Ganjil</option>
+              <option value="Genap">Genap</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Mata Pelajaran Default</label>
+            <select
+              value={defaultSubjectId}
+              onChange={(e) => setDefaultSubjectId(e.target.value)}
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500 focus:bg-slate-950 transition-colors"
+            >
+              {subjects.map((sub) => (
+                <option key={sub.id} value={sub.id}>
+                  {sub.namaMapel} ({sub.kodeMapel})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
-          {/* Per-sheet detail */}
-          {result.sheets && result.sheets.length > 0 && (
-            <div className="space-y-2">
-              {result.sheets.map((s) => (
-                <div key={s.sheet} className="rounded-xl bg-white/[0.03] border border-white/5 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setExpanded((p) => ({ ...p, [s.sheet]: !p[s.sheet] }))}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.03] transition-colors"
-                  >
+      {/* ── STEP 1: UPLOAD ── */}
+      {step === "upload" && (
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onClick={() => fileInputRef.current?.click()}
+          className={`
+            relative rounded-2xl border-2 border-dashed transition-all duration-200
+            flex flex-col items-center justify-center gap-3 py-16 cursor-pointer
+            ${isDragging
+              ? "border-indigo-500 bg-indigo-500/10 scale-[1.01]"
+              : "border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50"}
+          `}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) processExcelFile(f);
+            }}
+          />
+          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+            <Upload className="h-6 w-6 text-indigo-400" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold text-slate-200">
+              Drag & drop file Excel di sini
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              atau klik untuk mencari berkas komputer (.xlsx, .xls)
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 2: CONFIGURE (SHEETS & COLUMN MAPPING) ── */}
+      {step === "configure" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="text-indigo-400 h-5 w-5" />
+                <h4 className="text-sm font-bold text-white">Konfigurasi Lembar Kerja (Sheets)</h4>
+              </div>
+              <p className="text-xs text-slate-500">File: {file?.name} ({file ? formatSize(file.size) : ""})</p>
+            </div>
+
+            {/* Sheets List */}
+            <div className="space-y-3">
+              {sheets.map((sheet, idx) => (
+                <div key={sheet.sheetName} className="p-4 rounded-xl border border-slate-800 bg-slate-950/40 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      {expanded[s.sheet]
-                        ? <ChevronDown size={14} className="text-slate-500" />
-                        : <ChevronRight size={14} className="text-slate-500" />
-                      }
-                      <span className="text-sm font-semibold text-slate-200">{s.sheet}</span>
-                      <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                        ✓ {s.success}
-                      </span>
-                      {s.skipped > 0 && (
-                        <span className="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                          ⚠ {s.skipped} skip
-                        </span>
-                      )}
-                      {s.errors.length > 0 && (
-                        <span className="text-xs text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full">
-                          ✗ {s.errors.length} error
-                        </span>
-                      )}
+                      <input
+                        type="checkbox"
+                        checked={sheet.isSelected}
+                        onChange={(e) => {
+                          const updated = [...sheets];
+                          updated[idx]!.isSelected = e.target.checked;
+                          setSheets(updated);
+                        }}
+                        className="rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <p className="text-xs font-semibold text-slate-200">{sheet.sheetName}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{sheet.rows.length} baris data terdeteksi</p>
+                      </div>
                     </div>
-                  </button>
 
-                  {expanded[s.sheet] && s.errors.length > 0 && (
-                    <div className="px-4 pb-3 space-y-1">
-                      {s.errors.map((err, i) => (
-                        <p key={i} className="text-xs text-rose-300/70 pl-5">{err}</p>
-                      ))}
+                    {sheet.isSelected && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] uppercase font-bold text-slate-500">Target Kelas:</label>
+                        <select
+                          value={sheet.targetClassId}
+                          onChange={(e) => {
+                            const updated = [...sheets];
+                            updated[idx]!.targetClassId = e.target.value;
+                            setSheets(updated);
+                          }}
+                          className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 outline-none"
+                        >
+                          <option value="">-- Pilih Kelas --</option>
+                          {classes.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.namaKelas}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Mapping Kolom UI */}
+                  {sheet.isSelected && (
+                    <div className="pt-3 border-t border-slate-800/60">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">Pemetaan Kolom Excel:</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {DB_FIELDS.map((field) => (
+                          <div key={field.key} className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 block truncate">{field.label}</label>
+                            <select
+                              value={sheet.columnMap[field.key] || ""}
+                              onChange={(e) => {
+                                const updated = [...sheets];
+                                updated[idx]!.columnMap[field.key] = e.target.value;
+                                setSheets(updated);
+                              }}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[10px] text-slate-300 outline-none"
+                            >
+                              <option value="">-- Skip Kolom --</option>
+                              {sheet.headers.map((h) => (
+                                <option key={h} value={h}>
+                                  {h}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
               ))}
             </div>
-          )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-between">
+            <button
+              onClick={() => { setStep("upload"); setFile(null); setSheets([]); }}
+              className="px-4 py-2 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-semibold transition-colors"
+            >
+              Kembali
+            </button>
+            <button
+              onClick={validateAllSheets}
+              disabled={!sheets.some((s) => s.isSelected)}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <span>Validasi & Preview Data</span>
+              <ArrowRight size={14} />
+            </button>
+          </div>
         </div>
       )}
+
+      {/* ── STEP 3: PREVIEW & VALIDATE ── */}
+      {step === "preview" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 space-y-4">
+            {/* Sheet Tabs */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="text-emerald-400 h-5 w-5" />
+                <h4 className="text-sm font-bold text-white">Validasi & Pratinjau Nilai</h4>
+              </div>
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg">
+                {sheets.map((sheet, idx) => {
+                  if (!sheet.isSelected) return null;
+                  const hasErr = sheet.validationErrors.length > 0;
+                  return (
+                    <button
+                      key={sheet.sheetName}
+                      onClick={() => setCurrentSheetIdx(idx)}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${
+                        currentSheetIdx === idx
+                          ? "bg-slate-800 text-white"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      {sheet.sheetName}
+                      {hasErr && <AlertCircle size={10} className="text-rose-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Error panel jika ada error validasi */}
+            {sheets[currentSheetIdx]?.validationErrors && sheets[currentSheetIdx]!.validationErrors.length > 0 && (
+              <div className="p-3.5 rounded-xl border border-rose-500/20 bg-rose-500/5 space-y-1">
+                <p className="text-xs font-bold text-rose-400 flex items-center gap-1">
+                  <AlertTriangle size={14} />
+                  Ditemukan {sheets[currentSheetIdx]!.validationErrors.length} Kesalahan Validasi:
+                </p>
+                <div className="max-h-24 overflow-y-auto text-[10px] font-mono text-rose-300/80 pl-4 list-disc space-y-0.5 leading-relaxed">
+                  {sheets[currentSheetIdx]!.validationErrors.map((err, i) => (
+                    <p key={i}>• {err}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Table Preview */}
+            <div className="overflow-x-auto border border-slate-800 rounded-xl max-h-[300px]">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400">
+                    <th className="px-3 py-2">Baris</th>
+                    {DB_FIELDS.map((f) => (
+                      <th key={f.key} className="px-3 py-2 whitespace-nowrap">
+                        {f.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40 text-slate-300">
+                  {sheets[currentSheetIdx]?.rows.slice(0, 10).map((row, idx) => (
+                    <tr key={idx} className="hover:bg-white/[0.01]">
+                      <td className="px-3 py-2 text-slate-500">{idx + 1}</td>
+                      {DB_FIELDS.map((f) => {
+                        const excelHeader = sheets[currentSheetIdx]!.columnMap[f.key];
+                        const val = excelHeader ? row[excelHeader] : "";
+                        return (
+                          <td key={f.key} className="px-3 py-2 whitespace-nowrap">
+                            {val === "" ? (
+                              <span className="text-slate-700">—</span>
+                            ) : (
+                              val
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {sheets[currentSheetIdx] && sheets[currentSheetIdx]!.rows.length > 10 && (
+              <p className="text-[10px] text-slate-500 text-center">
+                Menampilkan 10 baris pertama dari total {sheets[currentSheetIdx]!.rows.length} baris.
+              </p>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-between">
+            <button
+              onClick={() => setStep("configure")}
+              className="px-4 py-2 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-semibold transition-colors"
+            >
+              Kembali
+            </button>
+            <button
+              onClick={handleStartImport}
+              disabled={sheets.some((s) => s.isSelected && s.validationErrors.length > 0)}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <Play size={12} />
+              <span>Simpan ke Database (Supabase)</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 4: IMPORTING ── */}
+      {step === "importing" && (
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-8 text-center space-y-4">
+          <Loader2 className="animate-spin text-indigo-400 h-8 w-8 mx-auto" />
+          <div>
+            <h4 className="text-sm font-bold text-white">Sedang Mengimpor Data...</h4>
+            <p className="text-xs text-slate-400 mt-1">
+              Impor sheet: <span className="font-semibold text-indigo-300">{importProgress.sheetName}</span> ({importProgress.current}/{importProgress.total})
+            </p>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="max-w-xs mx-auto h-2 bg-slate-950 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 5: RESULT ── */}
+      {step === "result" && importResult && (
+        <div className="space-y-6">
+          <div className={`
+            rounded-2xl border p-5 space-y-4
+            ${importResult.ok
+              ? "border-emerald-500/30 bg-emerald-500/5"
+              : "border-rose-500/30 bg-rose-500/5"}
+          `}>
+            {/* Status Summary */}
+            <div className="flex items-start gap-3">
+              {importResult.ok ? (
+                <CheckCircle size={18} className="text-emerald-400 mt-0.5 shrink-0" />
+              ) : (
+                <AlertCircle size={18} className="text-rose-400 mt-0.5 shrink-0" />
+              )}
+              <div>
+                <h4 className={`text-sm font-bold ${importResult.ok ? "text-emerald-300" : "text-rose-300"}`}>
+                  {importResult.message}
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">Semua data sheet yang dipilih selesai diproses.</p>
+              </div>
+            </div>
+
+            {/* Per-sheet Results */}
+            {importResult.sheets && (
+              <div className="space-y-2 pt-2">
+                {importResult.sheets.map((s) => (
+                  <div key={s.sheet} className="rounded-xl bg-white/[0.02] border border-slate-800 overflow-hidden">
+                    <button
+                      onClick={() => setExpandedLogs((p) => ({ ...p, [s.sheet]: !p[s.sheet] }))}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        {expandedLogs[s.sheet] ? (
+                          <ChevronDown size={14} className="text-slate-500" />
+                        ) : (
+                          <ChevronRight size={14} className="text-slate-500" />
+                        )}
+                        <span className="text-xs font-semibold text-slate-200">{s.sheet}</span>
+                        <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full font-bold">
+                          ✓ {s.success} sukses
+                        </span>
+                        {s.skipped > 0 && (
+                          <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full font-bold">
+                            ⚠ {s.skipped} skip
+                          </span>
+                        )}
+                        {s.errors.length > 0 && (
+                          <span className="text-[10px] text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full font-bold">
+                            ✗ {s.errors.length} error
+                          </span>
+                        )}
+                      </div>
+                    </button>
+
+                    {expandedLogs[s.sheet] && s.errors.length > 0 && (
+                      <div className="px-4 pb-3 space-y-1.5 border-t border-slate-900/60 pt-2.5">
+                        <p className="text-[10px] font-bold text-rose-300">Detail Log Error:</p>
+                        <div className="max-h-32 overflow-y-auto text-[10px] font-mono text-rose-300/80 space-y-1 pl-4 list-disc leading-relaxed">
+                          {s.errors.map((err, i) => (
+                            <p key={i}>• {err}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Reset Button */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                setStep("upload");
+                setFile(null);
+                setSheets([]);
+                setImportResult(null);
+              }}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-colors"
+            >
+              Import File Baru
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

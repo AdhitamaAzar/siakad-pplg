@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { FileSpreadsheet, Calendar, User, CheckCircle2, AlertTriangle, XCircle, Info, ChevronDown, ChevronUp } from "lucide-react";
 
 interface Log {
@@ -123,8 +123,8 @@ export default function LogClientPage({ logs }: LogClientPageProps) {
                   const hasErrors = !!log.errorDetails;
 
                   return (
-                    <>
-                      <tr key={log.id} className="hover:bg-white/[0.01] transition-colors">
+                    <Fragment key={log.id}>
+                      <tr className="hover:bg-white/[0.01] transition-colors">
                         <td className="px-4 py-3.5 text-xs text-slate-500 whitespace-nowrap">
                           <span className="flex items-center gap-1.5">
                             <Calendar size={13} />
@@ -190,7 +190,7 @@ export default function LogClientPage({ logs }: LogClientPageProps) {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })
               )}

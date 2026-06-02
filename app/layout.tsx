@@ -4,6 +4,10 @@
 //         Mengatur font, metadata global, dan session provider NextAuth.
 // =============================================================================
 
+// Semua halaman di app ini membutuhkan autentikasi dan data realtime dari database.
+// Dengan force-dynamic, Next.js tidak akan mencoba prerender halaman saat build.
+export const dynamic = "force-dynamic";
+
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";

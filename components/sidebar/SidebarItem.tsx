@@ -97,7 +97,12 @@ export default function SidebarItem({ item, isCollapsed }: SidebarItemProps) {
 
   // Deteksi apakah item ini aktif
   const isActive = isLinkActive(item.href) || 
-    (item.href !== "/" && pathname.startsWith(item.href) && !item.href.includes("?"));
+    (item.href !== "/" && 
+     pathname.startsWith(item.href + "/") && 
+     !item.href.includes("?") &&
+     !pathname.startsWith("/admin/import/log") && // Cegah double highlight untuk Log Import Admin
+     !pathname.startsWith("/guru/import/riwayat")  // Cegah double highlight untuk Riwayat Import Guru
+    );
 
   // Deteksi apakah salah satu child aktif
   const hasActiveChild = item.children?.some((child) => isLinkActive(child.href));
