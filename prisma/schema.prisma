@@ -363,3 +363,15 @@ model TeacherClassSubject {
   @@unique([teacherId, kelasId, subjectId])
   @@map("teacher_class_subjects")
 }
+
+/// Model AcademicYear: Data tahun ajaran akademik yang terdaftar di sistem
+model AcademicYear {
+  id          Int      @id @default(autoincrement())
+  tahunAjaran String   @unique
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("academic_years")
+}
+

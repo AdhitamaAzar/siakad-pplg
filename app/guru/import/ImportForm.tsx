@@ -64,6 +64,7 @@ export default function ImportForm() {
   const [defaultSubjectId, setDefaultSubjectId] = useState<string>("");
   const [semester, setSemester] = useState("Genap");
   const [tahunAjaran, setTahunAjaran] = useState("2025/2026");
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
 
   // Flow states: 'upload' | 'configure' | 'preview' | 'importing' | 'result'
   const [step, setStep] = useState<"upload" | "configure" | "preview" | "importing" | "result">("upload");
@@ -75,7 +76,7 @@ export default function ImportForm() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
 
-  // Fetch metadata kelas & mapel
+  // Fetch metadata kelas, mapel & tahun ajaran
   useEffect(() => {
     fetch("/api/admin/kelas")
       .then((res) => res.json())
@@ -95,6 +96,18 @@ export default function ImportForm() {
         }
       })
       .catch((err) => console.error("Gagal mengambil data mapel:", err));
+
+    fetch("/api/admin/tahun-ajaran")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok && data.years) {
+          setAcademicYears(data.years);
+          const activeYear = data.years.find((y: any) => y.isActive);
+          if (activeYear) setTahunAjaran(activeYear.tahunAjaran);
+          else if (data.years.length > 0) setTahunAjaran(data.years[0].tahunAjaran);
+        }
+      })
+      .catch((err) => console.error("Gagal mengambil data tahun ajaran:", err));
   }, []);
 
   // ─── FILE PARSING ──────────────────────────────────────────────────────────
@@ -359,13 +372,20 @@ export default function ImportForm() {
         <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Tahun Ajaran</label>
-            <input
-              type="text"
+            <select
               value={tahunAjaran}
               onChange={(e) => setTahunAjaran(e.target.value)}
               className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500 focus:bg-slate-950 transition-colors"
-              placeholder="Contoh: 2025/2026"
-            />
+            >
+              {academicYears.map((y) => (
+                <option key={y.id} value={y.tahunAjaran}>
+                  {y.tahunAjaran}{y.isActive ? " (Aktif)" : ""}
+                </option>
+              ))}
+              {academicYears.length === 0 && (
+                <option value="2025/2026">2025/2026</option>
+              )}
+            </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Semester</label>

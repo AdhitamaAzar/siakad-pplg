@@ -160,6 +160,26 @@ function buatAbsensiContoh(studentId: number) {
 async function main(): Promise<void> {
   console.log("🌱 Memulai proses seed database SIAKAD PPLG...\n");
 
+  // ── STEP 0: Buat Tahun Ajaran ──────────────────────────────────────────────
+  console.log("📅 Membuat tahun ajaran...");
+  await Promise.all([
+    prisma.academicYear.upsert({
+      where: { tahunAjaran: "2024/2025" },
+      update: {},
+      create: { tahunAjaran: "2024/2025", isActive: false },
+    }),
+    prisma.academicYear.upsert({
+      where: { tahunAjaran: "2025/2026" },
+      update: {},
+      create: { tahunAjaran: "2025/2026", isActive: true },
+    }),
+    prisma.academicYear.upsert({
+      where: { tahunAjaran: "2026/2027" },
+      update: {},
+      create: { tahunAjaran: "2026/2027", isActive: false },
+    }),
+  ]);
+
   // ── STEP 1: Buat Role ──────────────────────────────────────────────────────
   console.log("📋 Membuat roles...");
   const [roleAdmin, roleGuru, roleSiswa] = await Promise.all([
