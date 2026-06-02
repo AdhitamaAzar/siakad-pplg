@@ -32,14 +32,14 @@ function createPrismaClient(): PrismaClient {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
-    throw new Error(
-      "[Prisma] Environment variable DATABASE_URL tidak ditemukan!\n" +
-        "Pastikan file .env ada dan berisi DATABASE_URL yang valid.\n" +
-        "Contoh: DATABASE_URL=postgresql://root:@localhost:5432/siakad_pplg"
+    console.warn(
+      "[Prisma Warning] Environment variable DATABASE_URL tidak ditemukan! " +
+      "Menggunakan fallback dummy URL untuk mencegah kegagalan build."
     );
   }
 
-  const adapter = new PrismaPg({ connectionString: databaseUrl });
+  const connectionString = databaseUrl || "postgresql://postgres:postgres@localhost:5432/siakad_pplg";
+  const adapter = new PrismaPg({ connectionString });
 
   return new PrismaClient({
     adapter,
