@@ -213,11 +213,11 @@ export default function ImportForm() {
     const updatedSheets = sheets.map((sheet) => {
       if (!sheet.isSelected) return sheet;
 
-      // Filter baris kosong terlebih dahulu (jika NIS dan Nama kosong, abaikan)
+      // Filter baris kosong terlebih dahulu (jika NIS atau Nama kosong, abaikan/skip)
       const validRows = sheet.rows.filter((row) => {
         const nisVal = sheet.columnMap.nis ? String(row[sheet.columnMap.nis] || "").trim() : "";
         const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
-        return nisVal !== "" || namaVal !== "";
+        return nisVal !== "" && namaVal !== "";
       });
 
       const errors: string[] = [];
@@ -234,24 +234,19 @@ export default function ImportForm() {
       }
 
       validRows.forEach((row, idx) => {
-        const nisVal = sheet.columnMap.nis ? String(row[sheet.columnMap.nis] || "").trim() : "";
         const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
 
-        if (!nisVal) {
-          errors.push(`Baris ${idx + 1}: NIS kosong.`);
-        }
-        if (!namaVal) {
-          errors.push(`Baris ${idx + 1}: Nama kosong.`);
-        }
-
-        // Validasi nilai harus 0 - 100
+        // Validasi nilai harus 0 - 100 (lewati jika berisi "-", "Belum", atau kosong)
         DB_FIELDS.forEach((f) => {
           if (f.key !== "nis" && f.key !== "nama" && sheet.columnMap[f.key]) {
             const val = row[sheet.columnMap[f.key]];
-            if (val !== "" && val !== null && val !== undefined && String(val).trim() !== "") {
-              const num = Number(val);
-              if (isNaN(num) || num < 0 || num > 100) {
-                errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${f.label} tidak valid (${val}). Harus 0-100.`);
+            const valStr = val !== null && val !== undefined ? String(val).trim() : "";
+            if (valStr !== "") {
+              const num = Number(valStr);
+              if (!isNaN(num)) {
+                if (num < 0 || num > 100) {
+                  errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${f.label} tidak valid (${val}). Harus 0-100.`);
+                }
               }
             }
           }
@@ -292,10 +287,12 @@ export default function ImportForm() {
           if (f.key !== "nis" && f.key !== "nama") {
             const excelHeader = sheet.columnMap[f.key];
             const rawVal = excelHeader ? row[excelHeader] : "";
-            // Jika nilai kosong (empty string, null, undefined, space), simpan sebagai null agar diabaikan
-            const isEmpty = rawVal === "" || rawVal === null || rawVal === undefined || String(rawVal).trim() === "";
+            const rawValStr = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : "";
+            const num = Number(rawValStr);
+            // Jika nilai kosong atau bukan angka (misal "-", "Belum", dll.), simpan sebagai null agar diabaikan
+            const isEmpty = rawValStr === "" || isNaN(num);
             nilai[f.key.replace("nilai", "").replace(/^\w/, (c) => c.toLowerCase())] =
-              isEmpty ? null : Number(rawVal);
+              isEmpty ? null : num;
           }
         });
 
