@@ -65,9 +65,10 @@ export default function ImportForm() {
   const [semester, setSemester] = useState("Genap");
   const [tahunAjaran, setTahunAjaran] = useState("2025/2026");
   const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Flow states: 'upload' | 'configure' | 'preview' | 'importing' | 'result'
-  const [step, setStep] = useState<"upload" | "configure" | "preview" | "importing" | "result">("upload");
+  // Flow states: 'upload' | 'preview' | 'importing' | 'result'
+  const [step, setStep] = useState<"upload" | "preview" | "importing" | "result">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [sheets, setSheets] = useState<ExcelSheetData[]>([]);
@@ -108,6 +109,56 @@ export default function ImportForm() {
         }
       })
       .catch((err) => console.error("Gagal mengambil data tahun ajaran:", err));
+  }, []);
+
+  // ─── VALIDATION ────────────────────────────────────────────────────────────
+
+  const validateSheets = useCallback((targetSheets: ExcelSheetData[]) => {
+    return targetSheets.map((sheet) => {
+      if (!sheet.isSelected) return sheet;
+
+      // Filter baris kosong terlebih dahulu (jika NIS atau Nama kosong, abaikan/skip)
+      const validRows = sheet.rows.filter((row) => {
+        const nisVal = sheet.columnMap.nis ? String(row[sheet.columnMap.nis] || "").trim() : "";
+        const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
+        return nisVal !== "" && namaVal !== "";
+      });
+
+      const errors: string[] = [];
+      if (!sheet.targetClassId) {
+        errors.push("Target kelas belum ditentukan.");
+      }
+
+      // Validasi kolom wajib NIS dan Nama
+      if (!sheet.columnMap.nis) {
+        errors.push("Kolom NIS belum dipetakan.");
+      }
+      if (!sheet.columnMap.nama) {
+        errors.push("Kolom Nama belum dipetakan.");
+      }
+
+      validRows.forEach((row, idx) => {
+        const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
+
+        // Validasi nilai harus 0 - 100 (lewati jika berisi "-", "Belum", atau kosong)
+        DB_FIELDS.forEach((f) => {
+          if (f.key !== "nis" && f.key !== "nama" && sheet.columnMap[f.key]) {
+            const val = row[sheet.columnMap[f.key]];
+            const valStr = val !== null && val !== undefined ? String(val).trim() : "";
+            if (valStr !== "") {
+              const num = Number(valStr);
+              if (!isNaN(num)) {
+                if (num < 0 || num > 100) {
+                  errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${f.label} tidak valid (${val}). Harus 0-100.`);
+                }
+              }
+            }
+          }
+        });
+      });
+
+      return { ...sheet, rows: validRows, validationErrors: errors };
+    });
   }, []);
 
   // ─── FILE PARSING ──────────────────────────────────────────────────────────
@@ -190,11 +241,18 @@ export default function ImportForm() {
         };
       });
 
-      setSheets(parsedSheets);
-      setStep("configure");
+      const validated = validateSheets(parsedSheets);
+      setSheets(validated);
+
+      // Tentukan sheet pertama yang aktif untuk di-preview
+      const firstSelectedIdx = validated.findIndex((s) => s.isSelected);
+      if (firstSelectedIdx !== -1) {
+        setCurrentSheetIdx(firstSelectedIdx);
+      }
+      setStep("preview");
     };
     reader.readAsArrayBuffer(uploadedFile);
-  }, [classes]);
+  }, [classes, validateSheets]);
 
   // ─── FILE DRAG & DROP HANDLERS ─────────────────────────────────────────────
 
@@ -206,65 +264,6 @@ export default function ImportForm() {
       processExcelFile(f);
     }
   }, [processExcelFile]);
-
-  // ─── VALIDATION ────────────────────────────────────────────────────────────
-
-  const validateAllSheets = () => {
-    const updatedSheets = sheets.map((sheet) => {
-      if (!sheet.isSelected) return sheet;
-
-      // Filter baris kosong terlebih dahulu (jika NIS atau Nama kosong, abaikan/skip)
-      const validRows = sheet.rows.filter((row) => {
-        const nisVal = sheet.columnMap.nis ? String(row[sheet.columnMap.nis] || "").trim() : "";
-        const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
-        return nisVal !== "" && namaVal !== "";
-      });
-
-      const errors: string[] = [];
-      if (!sheet.targetClassId) {
-        errors.push("Target kelas belum ditentukan.");
-      }
-
-      // Validasi kolom wajib NIS dan Nama
-      if (!sheet.columnMap.nis) {
-        errors.push("Kolom NIS belum dipetakan.");
-      }
-      if (!sheet.columnMap.nama) {
-        errors.push("Kolom Nama belum dipetakan.");
-      }
-
-      validRows.forEach((row, idx) => {
-        const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
-
-        // Validasi nilai harus 0 - 100 (lewati jika berisi "-", "Belum", atau kosong)
-        DB_FIELDS.forEach((f) => {
-          if (f.key !== "nis" && f.key !== "nama" && sheet.columnMap[f.key]) {
-            const val = row[sheet.columnMap[f.key]];
-            const valStr = val !== null && val !== undefined ? String(val).trim() : "";
-            if (valStr !== "") {
-              const num = Number(valStr);
-              if (!isNaN(num)) {
-                if (num < 0 || num > 100) {
-                  errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${f.label} tidak valid (${val}). Harus 0-100.`);
-                }
-              }
-            }
-          }
-        });
-      });
-
-      return { ...sheet, rows: validRows, validationErrors: errors };
-    });
-
-    setSheets(updatedSheets);
-    
-    // Tentukan sheet pertama yang aktif untuk di-preview
-    const firstSelectedIdx = updatedSheets.findIndex((s) => s.isSelected);
-    if (firstSelectedIdx !== -1) {
-      setCurrentSheetIdx(firstSelectedIdx);
-    }
-    setStep("preview");
-  };
 
   // ─── SUBMIT / IMPORT EXECUTION ─────────────────────────────────────────────
 
@@ -451,117 +450,6 @@ export default function ImportForm() {
         </div>
       )}
 
-      {/* ── STEP 2: CONFIGURE (SHEETS & COLUMN MAPPING) ── */}
-      {step === "configure" && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="text-indigo-400 h-5 w-5" />
-                <h4 className="text-sm font-bold text-white">Konfigurasi Lembar Kerja (Sheets)</h4>
-              </div>
-              <p className="text-xs text-slate-500">File: {file?.name} ({file ? formatSize(file.size) : ""})</p>
-            </div>
-
-            {/* Sheets List */}
-            <div className="space-y-3">
-              {sheets.map((sheet, idx) => (
-                <div key={sheet.sheetName} className="p-4 rounded-xl border border-slate-800 bg-slate-950/40 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={sheet.isSelected}
-                        onChange={(e) => {
-                          const updated = [...sheets];
-                          updated[idx]!.isSelected = e.target.checked;
-                          setSheets(updated);
-                        }}
-                        className="rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <p className="text-xs font-semibold text-slate-200">{sheet.sheetName}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{sheet.rows.length} baris data terdeteksi</p>
-                      </div>
-                    </div>
-
-                    {sheet.isSelected && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-[10px] uppercase font-bold text-slate-500">Target Kelas:</label>
-                        <select
-                          value={sheet.targetClassId}
-                          onChange={(e) => {
-                            const updated = [...sheets];
-                            updated[idx]!.targetClassId = e.target.value;
-                            setSheets(updated);
-                          }}
-                          className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 outline-none"
-                        >
-                          <option value="">-- Pilih Kelas --</option>
-                          {classes.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.namaKelas}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Mapping Kolom UI */}
-                  {sheet.isSelected && (
-                    <div className="pt-3 border-t border-slate-800/60">
-                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">Pemetaan Kolom Excel:</p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {DB_FIELDS.map((field) => (
-                          <div key={field.key} className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-400 block truncate">{field.label}</label>
-                            <select
-                              value={sheet.columnMap[field.key] || ""}
-                              onChange={(e) => {
-                                const updated = [...sheets];
-                                updated[idx]!.columnMap[field.key] = e.target.value;
-                                setSheets(updated);
-                              }}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[10px] text-slate-300 outline-none"
-                            >
-                              <option value="">-- Skip Kolom --</option>
-                              {sheet.headers.map((h) => (
-                                <option key={h} value={h}>
-                                  {h}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex justify-between">
-            <button
-              onClick={() => { setStep("upload"); setFile(null); setSheets([]); }}
-              className="px-4 py-2 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-semibold transition-colors"
-            >
-              Kembali
-            </button>
-            <button
-              onClick={validateAllSheets}
-              disabled={!sheets.some((s) => s.isSelected)}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
-            >
-              <span>Validasi & Preview Data</span>
-              <ArrowRight size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ── STEP 3: PREVIEW & VALIDATE ── */}
       {step === "preview" && (
         <div className="space-y-6">
@@ -583,7 +471,7 @@ export default function ImportForm() {
                       className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-1 shrink-0 ${
                         currentSheetIdx === idx
                           ? "bg-slate-800 text-white"
-                          : "text-slate-500 hover:text-slate-300"
+                          : "text-slate-500 hover:text-slate-350"
                       }`}
                     >
                       <span className="whitespace-nowrap">{sheet.sheetName}</span>
@@ -601,7 +489,7 @@ export default function ImportForm() {
                   <AlertTriangle size={14} />
                   Ditemukan {sheets[currentSheetIdx]!.validationErrors.length} Kesalahan Validasi:
                 </p>
-                <div className="max-h-24 overflow-y-auto text-[10px] font-mono text-rose-300/80 pl-4 list-disc space-y-0.5 leading-relaxed">
+                <div className="max-h-24 overflow-y-auto text-[10px] font-mono text-rose-350 pl-4 list-disc space-y-0.5 leading-relaxed">
                   {sheets[currentSheetIdx]!.validationErrors.map((err, i) => (
                     <p key={i}>• {err}</p>
                   ))}
@@ -651,17 +539,128 @@ export default function ImportForm() {
             )}
           </div>
 
+          {/* Advanced toggle */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 font-semibold transition-colors cursor-pointer"
+            >
+              <Settings size={13} className={showAdvanced ? "animate-spin" : ""} />
+              <span>{showAdvanced ? "Sembunyikan Pengaturan Lanjut" : "Sesuaikan Kelas & Pemetaan Kolom (Tingkat Lanjut)"}</span>
+            </button>
+          </div>
+
+          {/* Advanced Panel */}
+          {showAdvanced && (
+            <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 space-y-4 fade-in">
+              <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                <Settings className="text-indigo-400 h-5 w-5" />
+                <h4 className="text-sm font-bold text-white">Konfigurasi Lembar Kerja & Kolom</h4>
+              </div>
+
+              {/* Sheets List */}
+              <div className="space-y-3">
+                {sheets.map((sheet, idx) => (
+                  <div key={sheet.sheetName} className="p-4 rounded-xl border border-slate-800 bg-slate-950/40 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={sheet.isSelected}
+                          onChange={(e) => {
+                            const updated = [...sheets];
+                            updated[idx]!.isSelected = e.target.checked;
+                            const validated = validateSheets(updated);
+                            setSheets(validated);
+
+                            // If currently previewed sheet is deselected, find another selected one
+                            if (!e.target.checked && currentSheetIdx === idx) {
+                              const firstSelected = validated.findIndex(s => s.isSelected);
+                              if (firstSelected !== -1) {
+                                setCurrentSheetIdx(firstSelected);
+                              }
+                            }
+                          }}
+                          className="rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500"
+                        />
+                        <div>
+                          <p className="text-xs font-semibold text-slate-200">{sheet.sheetName}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{sheet.rows.length} baris data terdeteksi</p>
+                        </div>
+                      </div>
+
+                      {sheet.isSelected && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] uppercase font-bold text-slate-500">Target Kelas:</label>
+                          <select
+                            value={sheet.targetClassId}
+                            onChange={(e) => {
+                              const updated = [...sheets];
+                              updated[idx]!.targetClassId = e.target.value;
+                              const validated = validateSheets(updated);
+                              setSheets(validated);
+                            }}
+                            className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-350 outline-none"
+                          >
+                            <option value="">-- Pilih Kelas --</option>
+                            {classes.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.namaKelas}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Mapping Kolom UI */}
+                    {sheet.isSelected && (
+                      <div className="pt-3 border-t border-slate-800/60">
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">Pemetaan Kolom Excel:</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {DB_FIELDS.map((field) => (
+                            <div key={field.key} className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 block truncate">{field.label}</label>
+                              <select
+                                value={sheet.columnMap[field.key] || ""}
+                                onChange={(e) => {
+                                  const updated = [...sheets];
+                                  updated[idx]!.columnMap[field.key] = e.target.value;
+                                  const validated = validateSheets(updated);
+                                  setSheets(validated);
+                                }}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[10px] text-slate-300 outline-none"
+                              >
+                                <option value="">-- Skip Kolom --</option>
+                                {sheet.headers.map((h) => (
+                                  <option key={h} value={h}>
+                                    {h}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex justify-between">
             <button
-              onClick={() => setStep("configure")}
+              onClick={() => { setFile(null); setSheets([]); setStep("upload"); }}
               className="px-4 py-2 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-semibold transition-colors"
             >
               Kembali
             </button>
             <button
               onClick={handleStartImport}
-              disabled={sheets.some((s) => s.isSelected && s.validationErrors.length > 0)}
+              disabled={sheets.some((s) => s.isSelected && s.validationErrors.length > 0) || !sheets.some((s) => s.isSelected)}
               className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
               <Play size={12} />
