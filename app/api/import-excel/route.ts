@@ -92,6 +92,234 @@ function hitungPredikat(nilai: number | null): string | null {
   return "Perlu Bimbingan";
 }
 
+// ── NAME MATCHING & NORMALIZATION ─────────────────────────────────────────────
+
+function normalizeName(name: string): string {
+  if (!name) return "";
+  let n = name.toLowerCase().trim();
+  
+  // Normalize common prefixes/abbreviations
+  n = n.replace(/\bm\b/g, "muhammad");
+  n = n.replace(/\bm\./g, "muhammad");
+  n = n.replace(/\bmoch\b/g, "muhammad");
+  n = n.replace(/\bmochammad\b/g, "muhammad");
+  n = n.replace(/\bmuchammad\b/g, "muhammad");
+  
+  // Phonetic/Spelling normalizations - order matters!
+  n = n.replace(/sy/g, "s");
+  n = n.replace(/sh/g, "s");
+  n = n.replace(/ch/g, "c");
+  n = n.replace(/kh/g, "k");
+  n = n.replace(/ph/g, "f");
+  n = n.replace(/f/g, "p"); // normalize p/f
+  n = n.replace(/v/g, "p"); // normalize v/p
+  n = n.replace(/z/g, "s"); // normalize z/s
+  n = n.replace(/y/g, "i"); // normalize y/i
+  n = n.replace(/o/g, "a"); // normalize o/a
+  n = n.replace(/h/g, "");  // remove h
+  
+  // Remove non-alphanumeric
+  n = n.replace(/[^a-z0-9]/g, "");
+  
+  // Collapse consecutive duplicate characters
+  let prev = "";
+  let collapsed = "";
+  for (let i = 0; i < n.length; i++) {
+    const char = n[i];
+    if (char !== prev) {
+      collapsed += char;
+      prev = char;
+    }
+  }
+  return collapsed;
+}
+
+function matchNames(dbName: string, excelName: string): boolean {
+  const normDb = normalizeName(dbName);
+  const normExcel = normalizeName(excelName);
+  if (!normDb || !normExcel) return false;
+
+  // 1. Normalized exact match
+  if (normDb === normExcel) return true;
+
+  // 2. Manual overrides
+  const lowerExcel = excelName.toLowerCase().trim();
+  const lowerDb = dbName.toLowerCase().trim();
+  
+  if (lowerExcel === "farel triaji" || lowerExcel === "fareltriaji") {
+    return lowerDb.includes("triaji");
+  }
+  if (lowerExcel === "barbie") {
+    return lowerDb.includes("barby");
+  }
+  if (lowerExcel === "sifa") {
+    return lowerDb.includes("syifa");
+  }
+  if (lowerExcel === "yuan") {
+    return lowerDb.includes("yuwan");
+  }
+  if (lowerExcel === "trio") {
+    return lowerDb.startsWith("trio");
+  }
+  if (lowerExcel === "bima") {
+    return lowerDb.includes("mochamad bima");
+  }
+  if (lowerExcel === "sely aljananta" || lowerExcel === "selyaljananta") {
+    return lowerDb.includes("sely aljannata");
+  }
+
+  // 3. Normalized startswith / includes
+  if (normDb.includes(normExcel) || normExcel.includes(normDb)) return true;
+
+  // 4. Token matching
+  const excelTokens = excelName.toLowerCase().split(/\s+/).filter(t => t.length > 1 && t !== "m" && t !== "m." && t !== "bin" && t !== "binti");
+  if (excelTokens.length > 0) {
+    let matchedTokens = 0;
+    for (const token of excelTokens) {
+      if (normDb.includes(normalizeName(token))) {
+        matchedTokens++;
+      }
+    }
+    if (matchedTokens === excelTokens.length) return true;
+  }
+
+  return false;
+}
+
+// ── AUXILIARY PARSERS ─────────────────────────────────────────────────────────
+
+function parseAttendanceSheet(ws: XLSX.WorkSheet) {
+  const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+  if (aoa.length < 9) return [];
+
+  let jumlahColIdx = -1;
+  const row7 = (aoa[6] || []) as any[];
+  const row8 = (aoa[7] || []) as any[];
+  
+  for (let j = 0; j < row7.length; j++) {
+    if (String(row7[j]).toLowerCase().includes("jumlah")) {
+      jumlahColIdx = j;
+      break;
+    }
+  }
+  if (jumlahColIdx === -1) {
+    for (let j = 0; j < row8.length; j++) {
+      if (String(row8[j]).toLowerCase().includes("jumlah") || String(row8[j]).toLowerCase().includes("tidak masuk")) {
+        jumlahColIdx = j;
+        break;
+      }
+    }
+  }
+  if (jumlahColIdx === -1) {
+    jumlahColIdx = 29;
+  }
+
+  const results = [];
+  for (let i = 8; i < aoa.length; i++) {
+    const row = aoa[i] as any[];
+    if (!row || !row[0] || !row[1] || String(row[1]).trim() === "" || String(row[1]).toLowerCase() === "nama") continue;
+
+    const nama = String(row[1]).trim();
+    if (nama.includes("#REF!") || nama === "?" || nama.toLowerCase().includes("jumlah") || nama.toLowerCase().includes("siswa")) continue;
+
+    const totalTidakHadir = Number(row[jumlahColIdx]) || 0;
+    const totalHadir = Number(row[jumlahColIdx + 1]) || 0;
+    const persentaseHadir = Number(row[jumlahColIdx + 2]) || 0;
+
+    results.push({
+      nama,
+      totalTidakHadir,
+      totalHadir,
+      persentaseHadir,
+    });
+  }
+  return results;
+}
+
+function parseCatatanSheet(ws: XLSX.WorkSheet) {
+  const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+  if (aoa.length < 2) return [];
+
+  const results = [];
+  const parseRegex = /^\d+\.\s*([^:]+?)\s*:\s*(.*)$/;
+
+  for (let i = 1; i < aoa.length; i++) {
+    const row = aoa[i] as any[];
+    if (!row || !row[0] || String(row[0]).trim() === "") continue;
+
+    const firstCell = String(row[0]).trim();
+    const match = parseRegex.exec(firstCell);
+    if (match) {
+      const name = match[1].trim();
+      const judulProyek = match[2].trim() || "Proyek Mandiri";
+      
+      const nilaiItem = row[1] !== "" ? Number(row[1]) : null;
+      const nilaiData = row[3] !== "" ? Number(row[3]) : null;
+      const nilaiAlur = row[4] !== "" ? Number(row[4]) : null;
+      const nilaiMetode = row[5] !== "" ? Number(row[5]) : null;
+      const nilaiTambah = row[6] !== "" ? Number(row[6]) : null;
+      const nilaiUrutan = row[7] !== "" ? Number(row[7]) : null;
+      const nilaiTa1 = row[8] !== "" ? Number(row[8]) : null;
+      const catatanText = row[11] !== "" ? String(row[11]).trim() : "";
+
+      let className = "";
+      if (i >= 1 && i <= 26) className = "XI PPLG 3";
+      else if (i >= 28 && i <= 53) className = "XI PPLG 2";
+      else if (i >= 56 && i <= 79) className = "XI PPLG 1";
+
+      if (className) {
+        results.push({
+          nama: name,
+          className,
+          judulProyek,
+          nilaiItem,
+          nilaiData,
+          nilaiAlur,
+          nilaiMetode,
+          nilaiTambah,
+          nilaiUrutan,
+          nilaiTa1,
+          catatan: catatanText || "Proyek Mandiri"
+        });
+      }
+    }
+  }
+  return results;
+}
+
+function parseLaporanSheet(ws: XLSX.WorkSheet) {
+  const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+  if (aoa.length < 10) return [];
+
+  const results = [];
+  for (let i = 9; i < aoa.length; i++) {
+    const row = aoa[i] as any[];
+    if (!row || !row[0] || !row[1] || String(row[2]).trim() === "" || String(row[2]).toLowerCase() === "nama") continue;
+
+    const nis = String(row[1]).replace(/\s+/g, "").trim();
+    const nama = String(row[2]).trim();
+    
+    if (nama.includes("#REF!") || nama === "?" || nama.toLowerCase().includes("jumlah") || nama.toLowerCase().includes("siswa") || nama.toLowerCase().includes("prosentase") || nama.toLowerCase().includes("tuntas") || /^\d+$/.test(nama)) continue;
+
+    const checklistH = row[7] === 1;
+    const checklistI = row[8] === 1;
+    const checklistJ = row[9] === 1;
+    const checklistK = row[10] === 1;
+    const skorLaporan = row[11] !== "" ? Number(row[11]) : null;
+
+    results.push({
+      nis,
+      nama,
+      checklistH,
+      checklistI,
+      checklistJ,
+      checklistK,
+      skorLaporan
+    });
+  }
+  return results;
+}
+
 // ── PARSE SHEET ───────────────────────────────────────────────────────────────
 
 /**
@@ -179,7 +407,7 @@ export async function POST(req: NextRequest) {
     }
 
     for (const sheet of sheets) {
-      const { sheetName, targetClassId, rows } = sheet;
+      const { sheetName, targetClassId, rows, attendanceRows, catatanRows, laporanRows } = sheet;
       const classId = Number(targetClassId);
 
       if (isNaN(classId) || !rows || !Array.isArray(rows)) {
@@ -197,7 +425,7 @@ export async function POST(req: NextRequest) {
       const rowErrors: string[] = [];
 
       for (const row of rows) {
-        // Jika NIS dan Nama kosong, lewati saja (biarkan)
+        // Jika NIS dan Nama kosong, lewati saja
         if (!row.nis && !row.nama) {
           continue;
         }
@@ -253,15 +481,138 @@ export async function POST(req: NextRequest) {
               });
             }
 
-            // Hitung derived values (pastikan nilai null/kosong tidak berubah menjadi 0)
-            const vals = Object.values(row.nilai).map((v) => (v === "" || v === undefined || v === null ? null : Number(v)));
-            const rataRata = hitungRataRata(vals);
-            const nilaiRaport = hitungNilaiRaport(rataRata);
-            const predikat = hitungPredikat(nilaiRaport);
-            const totalKosong = vals.filter((v) => v === null).length;
-            const statusTuntas = nilaiRaport !== null && nilaiRaport >= 75 ? "TUNTAS" : nilaiRaport !== null ? "TIDAK TUNTAS" : null;
+            // ─── 1. ATTENDANCE UPSERT ───
+            let matchedAttendance = null;
+            if (attendanceRows && Array.isArray(attendanceRows)) {
+              matchedAttendance = attendanceRows.find((att: any) => matchNames(student.nama, att.nama));
+            }
+            let persentaseHadir = null;
+            if (matchedAttendance) {
+              persentaseHadir = matchedAttendance.persentaseHadir;
+              await tx.attendance.upsert({
+                where: {
+                  studentId_semester_tahunAjaran: {
+                    studentId: student.id,
+                    semester,
+                    tahunAjaran,
+                  },
+                },
+                update: {
+                  totalHadir: matchedAttendance.totalHadir,
+                  totalTidakHadir: matchedAttendance.totalTidakHadir,
+                  persentaseHadir: matchedAttendance.persentaseHadir,
+                },
+                create: {
+                  studentId: student.id,
+                  semester,
+                  tahunAjaran,
+                  totalHadir: matchedAttendance.totalHadir,
+                  totalTidakHadir: matchedAttendance.totalTidakHadir,
+                  persentaseHadir: matchedAttendance.persentaseHadir,
+                },
+              });
+            }
 
-            // Manual Upsert Grade
+            // ─── 2. NOTES UPSERT ───
+            let matchedNote = null;
+            if (catatanRows && Array.isArray(catatanRows)) {
+              matchedNote = catatanRows.find((cat: any) => matchNames(student.nama, cat.nama));
+            }
+            let nilaiTa1 = null;
+            if (matchedNote) {
+              nilaiTa1 = matchedNote.nilaiTa1;
+              const teacher = await tx.teacher.findFirst({
+                where: { userId: Number(session.user.id) },
+              });
+              let teacherId = teacher?.id;
+              if (!teacherId) {
+                const firstTeacher = await tx.teacher.findFirst();
+                teacherId = firstTeacher?.id;
+              }
+
+              if (teacherId) {
+                const scores = [
+                  matchedNote.nilaiItem,
+                  matchedNote.nilaiData,
+                  matchedNote.nilaiAlur,
+                  matchedNote.nilaiMetode,
+                  matchedNote.nilaiTambah,
+                  matchedNote.nilaiUrutan,
+                  matchedNote.nilaiTa1,
+                ].filter((v) => v !== null && v !== undefined && v !== "");
+                
+                const sum = scores.reduce((acc, v) => acc + Number(v), 0);
+                const nilaiTotal = scores.length > 0 ? Math.round((sum / scores.length) * 10) / 10 : null;
+
+                const existingNote = await tx.note.findFirst({
+                  where: { studentId: student.id },
+                });
+
+                const noteData = {
+                  teacherId,
+                  judulProyek: matchedNote.judulProyek || "Proyek Mandiri",
+                  catatan: matchedNote.catatan || "Proyek Mandiri",
+                  nilaiItem: matchedNote.nilaiItem,
+                  nilaiData: matchedNote.nilaiData,
+                  nilaiAlur: matchedNote.nilaiAlur,
+                  nilaiMetode: matchedNote.nilaiMetode,
+                  nilaiTambah: matchedNote.nilaiTambah,
+                  nilaiUrutan: matchedNote.nilaiUrutan,
+                  nilaiTa1: matchedNote.nilaiTa1,
+                  nilaiTotal,
+                };
+
+                if (existingNote) {
+                  await tx.note.update({
+                    where: { id: existingNote.id },
+                    data: noteData,
+                  });
+                } else {
+                  await tx.note.create({
+                    data: {
+                      studentId: student.id,
+                      ...noteData,
+                    },
+                  });
+                }
+              }
+            }
+
+            // ─── 3. REPORT UPSERT ───
+            let matchedReport = null;
+            if (laporanRows && Array.isArray(laporanRows)) {
+              matchedReport = laporanRows.find((rep: any) => matchNames(student.nama, rep.nama));
+            }
+            if (matchedReport) {
+              await tx.report.upsert({
+                where: {
+                  studentId_semester_tahunAjaran: {
+                    studentId: student.id,
+                    semester,
+                    tahunAjaran,
+                  },
+                },
+                update: {
+                  checklistH: matchedReport.checklistH,
+                  checklistI: matchedReport.checklistI,
+                  checklistJ: matchedReport.checklistJ,
+                  checklistK: matchedReport.checklistK,
+                  skorLaporan: matchedReport.skorLaporan,
+                },
+                create: {
+                  studentId: student.id,
+                  semester,
+                  tahunAjaran,
+                  checklistH: matchedReport.checklistH,
+                  checklistI: matchedReport.checklistI,
+                  checklistJ: matchedReport.checklistJ,
+                  checklistK: matchedReport.checklistK,
+                  skorLaporan: matchedReport.skorLaporan,
+                },
+              });
+            }
+
+            // ─── 4. GRADE CALCULATIONS & UPSERT ───
             const existingGrade = await tx.grade.findFirst({
               where: {
                 studentId: student.id,
@@ -269,6 +620,26 @@ export async function POST(req: NextRequest) {
                 tahunAjaran,
               },
             });
+
+            const vals = Object.values(row.nilai).map((v) => (v === "" || v === undefined || v === null ? null : Number(v)));
+            const rataRata = hitungRataRata(vals);
+
+            // Re-kalkulasi nilaiHasil dan nilaiRaport dengan TA1
+            const avgTugas = rataRata ?? 0;
+            const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
+            const ta2 = existingGrade?.nilaiTa2 ?? 0;
+
+            const listFinal = [avgTugas];
+            if (ta1 > 0) listFinal.push(ta1);
+            if (ta2 > 0) listFinal.push(ta2);
+
+            const nilaiHasil = listFinal.reduce((a, b) => a + b, 0) / listFinal.length;
+            const nilaiRaport = Math.round(nilaiHasil);
+            const predikat = hitungPredikat(nilaiRaport);
+            const totalKosong = vals.filter((v) => v === null).length;
+            const statusTuntas = nilaiRaport >= 75 ? "TUNTAS" : "BELUM";
+
+            const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
 
             const gradeData = {
               nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : undefined,
@@ -281,6 +652,9 @@ export async function POST(req: NextRequest) {
               nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : undefined,
               nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : undefined,
               rataRata,
+              nilaiTa1: ta1 > 0 ? ta1 : null,
+              persentaseHadir: finalPersentaseHadir,
+              nilaiHasil,
               nilaiRaport,
               predikat,
               jumlahNilaiKosong:  totalKosong,
@@ -379,12 +753,48 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // Load teacherId or fallback
+  let teacherId: number | null = null;
+  const teacher = await prisma.teacher.findFirst({
+    where: { userId: Number(session.user.id) },
+  });
+  teacherId = teacher?.id || null;
+  if (!teacherId) {
+    const firstTeacher = await prisma.teacher.findFirst();
+    teacherId = firstTeacher?.id || null;
+  }
+
   for (const [sheetName, namaKelas] of Object.entries(SHEET_KELAS)) {
     const ws = workbook.Sheets[sheetName];
     if (!ws) {
       sheetResults.push({ sheet: sheetName, success: 0, skipped: 0, errors: [`Sheet "${sheetName}" tidak ditemukan dalam file.`] });
       continue;
     }
+
+    // Parse auxiliary sheets in Form data flow too
+    const attSheetName = workbook.SheetNames.find(name => {
+      const clean = name.toLowerCase().replace(/\s+/g, "");
+      return clean === "ab" + sheetName.toLowerCase().replace(/\s+/g, "");
+    });
+    const wsAtt = attSheetName ? workbook.Sheets[attSheetName] : null;
+    const attendanceRows = wsAtt ? parseAttendanceSheet(wsAtt) : [];
+
+    const repSheetName = workbook.SheetNames.find(name => {
+      const clean = name.toLowerCase().replace(/\s+/g, "");
+      return clean === "l" + sheetName.toLowerCase().replace(/\s+/g, "");
+    });
+    const wsRep = repSheetName ? workbook.Sheets[repSheetName] : null;
+    const laporanRows = wsRep ? parseLaporanSheet(wsRep) : [];
+
+    const catSheetName = workbook.SheetNames.find(name => {
+      const clean = name.toLowerCase().replace(/\s+/g, "");
+      return clean === "catatan";
+    });
+    const wsCat = catSheetName ? workbook.Sheets[catSheetName] : null;
+    const allCatatanRows = wsCat ? parseCatatanSheet(wsCat) : [];
+    const filteredCatatanRows = allCatatanRows.filter(r => 
+      r.className.toLowerCase().replace(/\s+/g, "") === namaKelas.toLowerCase().replace(/\s+/g, "")
+    );
 
     const { rows, errors: parseErrors } = parseSheet(ws);
 
@@ -411,23 +821,20 @@ export async function POST(req: NextRequest) {
     for (const row of rows) {
       try {
         await prisma.$transaction(async (tx) => {
-          // Cari atau buat user berdasarkan username = NIS prefix (misal 14006 dari 14006/1667.063)
+          // Cari atau buat user berdasarkan username = NIS prefix
           const username = row.nis.split("/")[0]!;
           let user = await tx.user.findUnique({ where: { username } });
 
           if (!user) {
-            // Pengamanan: Hanya Admin yang boleh memicu auto-provisioning (membuat akun pengguna baru)
             if (session.user.role !== "admin") {
               throw new Error(`Pengguna dengan NIS ${row.nis} tidak ditemukan. Silakan hubungi Administrator untuk mendaftarkan akun siswa terlebih dahulu.`);
             }
 
-            // Dapatkan roleId untuk "siswa"
             const roleSiswa = await tx.role.findUnique({ where: { name: "siswa" } });
             if (!roleSiswa) {
               throw new Error("Role 'siswa' tidak ditemukan di database.");
             }
 
-            // Gunakan username (NIS prefix) sebagai default password (seperti di seeder)
             const hashedPassword = await bcrypt.hash(username, 12);
 
             user = await tx.user.create({
@@ -460,15 +867,118 @@ export async function POST(req: NextRequest) {
             });
           }
 
-          // Hitung derived values
-          const vals       = Object.values(row.nilai);
-          const rataRata   = hitungRataRata(vals);
-          const nilaiRaport = hitungNilaiRaport(rataRata);
-          const predikat   = hitungPredikat(nilaiRaport);
-          const totalKosong = vals.filter((v) => v === null).length;
-          const statusTuntas = nilaiRaport !== null && nilaiRaport >= 75 ? "TUNTAS" : nilaiRaport !== null ? "TIDAK TUNTAS" : null;
+          // ─── 1. ATTENDANCE UPSERT ───
+          let matchedAttendance = attendanceRows.find((att: any) => matchNames(student.nama, att.nama));
+          let persentaseHadir = null;
+          if (matchedAttendance) {
+            persentaseHadir = matchedAttendance.persentaseHadir;
+            await tx.attendance.upsert({
+              where: {
+                studentId_semester_tahunAjaran: {
+                  studentId: student.id,
+                  semester,
+                  tahunAjaran,
+                },
+              },
+              update: {
+                totalHadir: matchedAttendance.totalHadir,
+                totalTidakHadir: matchedAttendance.totalTidakHadir,
+                persentaseHadir: matchedAttendance.persentaseHadir,
+              },
+              create: {
+                studentId: student.id,
+                semester,
+                tahunAjaran,
+                totalHadir: matchedAttendance.totalHadir,
+                totalTidakHadir: matchedAttendance.totalTidakHadir,
+                persentaseHadir: matchedAttendance.persentaseHadir,
+              },
+            });
+          }
 
-          // Manual Upsert Grade
+          // ─── 2. NOTES UPSERT ───
+          let matchedNote = filteredCatatanRows.find((cat: any) => matchNames(student.nama, cat.nama));
+          let nilaiTa1 = null;
+          if (matchedNote && teacherId) {
+            nilaiTa1 = matchedNote.nilaiTa1;
+            const scores = [
+              matchedNote.nilaiItem,
+              matchedNote.nilaiData,
+              matchedNote.nilaiAlur,
+              matchedNote.nilaiMetode,
+              matchedNote.nilaiTambah,
+              matchedNote.nilaiUrutan,
+              matchedNote.nilaiTa1,
+            ].filter((v) => v !== null && v !== undefined && v !== "");
+            
+            const sum = scores.reduce((acc, v) => acc + Number(v), 0);
+            const nilaiTotal = scores.length > 0 ? Math.round((sum / scores.length) * 10) / 10 : null;
+
+            const existingNote = await tx.note.findFirst({
+              where: { studentId: student.id },
+            });
+
+            const noteData = {
+              teacherId,
+              judulProyek: matchedNote.judulProyek || "Proyek Mandiri",
+              catatan: matchedNote.catatan || "Proyek Mandiri",
+              nilaiItem: matchedNote.nilaiItem,
+              nilaiData: matchedNote.nilaiData,
+              nilaiAlur: matchedNote.nilaiAlur,
+              nilaiMetode: matchedNote.nilaiMetode,
+              nilaiTambah: matchedNote.nilaiTambah,
+              nilaiUrutan: matchedNote.nilaiUrutan,
+              nilaiTa1: matchedNote.nilaiTa1,
+              nilaiTotal,
+            };
+
+            if (existingNote) {
+              await tx.note.update({
+                where: { id: existingNote.id },
+                data: noteData,
+              });
+            } else {
+              await tx.note.create({
+                data: {
+                  studentId: student.id,
+                  ...noteData,
+                },
+              });
+            }
+          }
+
+          // ─── 3. REPORT UPSERT ───
+          let matchedReport = laporanRows.find((rep: any) => matchNames(student.nama, rep.nama));
+          if (matchedReport) {
+            await tx.report.upsert({
+              where: {
+                studentId_semester_tahunAjaran: {
+                  studentId: student.id,
+                  semester,
+                  tahunAjaran,
+                },
+              },
+              update: {
+                checklistH: matchedReport.checklistH,
+                checklistI: matchedReport.checklistI,
+                checklistJ: matchedReport.checklistJ,
+                checklistK: matchedReport.checklistK,
+                skorLaporan: matchedReport.skorLaporan,
+              },
+              create: {
+                studentId: student.id,
+                semester,
+                tahunAjaran,
+                checklistH: matchedReport.checklistH,
+                checklistI: matchedReport.checklistI,
+                checklistJ: matchedReport.checklistJ,
+                checklistK: matchedReport.checklistK,
+                skorLaporan: matchedReport.skorLaporan,
+              },
+            });
+          }
+
+          // ─── 4. GRADE CALCULATIONS & UPSERT ───
           const existingGrade = await tx.grade.findFirst({
             where: {
               studentId: student.id,
@@ -476,6 +986,25 @@ export async function POST(req: NextRequest) {
               tahunAjaran,
             },
           });
+
+          const vals       = Object.values(row.nilai);
+          const rataRata   = hitungRataRata(vals);
+
+          const avgTugas = rataRata ?? 0;
+          const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
+          const ta2 = existingGrade?.nilaiTa2 ?? 0;
+
+          const listFinal = [avgTugas];
+          if (ta1 > 0) listFinal.push(ta1);
+          if (ta2 > 0) listFinal.push(ta2);
+
+          const nilaiHasil = listFinal.reduce((a, b) => a + b, 0) / listFinal.length;
+          const nilaiRaport = Math.round(nilaiHasil);
+          const predikat   = hitungPredikat(nilaiRaport);
+          const totalKosong = vals.filter((v) => v === null).length;
+          const statusTuntas = nilaiRaport >= 75 ? "TUNTAS" : "BELUM";
+
+          const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
 
           const gradeData = {
             nilaiGithub:        row.nilai.github,
@@ -488,6 +1017,9 @@ export async function POST(req: NextRequest) {
             nilaiUjianMl:       row.nilai.ujianMl,
             nilaiUjianSql:      row.nilai.ujianSql,
             rataRata,
+            nilaiTa1: ta1 > 0 ? ta1 : null,
+            persentaseHadir: finalPersentaseHadir,
+            nilaiHasil,
             nilaiRaport,
             predikat,
             jumlahNilaiKosong:  totalKosong,

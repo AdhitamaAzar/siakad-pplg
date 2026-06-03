@@ -57,8 +57,138 @@ interface ImportResult {
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
+function parseAttendanceSheet(ws: XLSX.WorkSheet) {
+  const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+  if (aoa.length < 9) return [];
+
+  let jumlahColIdx = -1;
+  const row7 = (aoa[6] || []) as any[];
+  const row8 = (aoa[7] || []) as any[];
+  
+  for (let j = 0; j < row7.length; j++) {
+    if (String(row7[j]).toLowerCase().includes("jumlah")) {
+      jumlahColIdx = j;
+      break;
+    }
+  }
+  if (jumlahColIdx === -1) {
+    for (let j = 0; j < row8.length; j++) {
+      if (String(row8[j]).toLowerCase().includes("jumlah") || String(row8[j]).toLowerCase().includes("tidak masuk")) {
+        jumlahColIdx = j;
+        break;
+      }
+    }
+  }
+
+  if (jumlahColIdx === -1) {
+    jumlahColIdx = 29;
+  }
+
+  const results = [];
+  for (let i = 8; i < aoa.length; i++) {
+    const row = aoa[i] as any[];
+    if (!row || !row[0] || !row[1] || String(row[1]).trim() === "" || String(row[1]).toLowerCase() === "nama") continue;
+
+    const nama = String(row[1]).trim();
+    const totalTidakHadir = Number(row[jumlahColIdx]) || 0;
+    const totalHadir = Number(row[jumlahColIdx + 1]) || 0;
+    const persentaseHadir = Number(row[jumlahColIdx + 2]) || 0;
+
+    results.push({
+      nama,
+      totalTidakHadir,
+      totalHadir,
+      persentaseHadir,
+    });
+  }
+  return results;
+}
+
+function parseCatatanSheet(ws: XLSX.WorkSheet) {
+  const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+  if (aoa.length < 2) return [];
+
+  const results = [];
+  const parseRegex = /^\d+\.\s*([^:]+?)\s*:\s*(.*)$/;
+
+  for (let i = 1; i < aoa.length; i++) {
+    const row = aoa[i] as any[];
+    if (!row || !row[0] || String(row[0]).trim() === "") continue;
+
+    const firstCell = String(row[0]).trim();
+    const match = parseRegex.exec(firstCell);
+    if (match) {
+      const name = match[1].trim();
+      const judulProyek = match[2].trim() || "Proyek Mandiri";
+      
+      const nilaiItem = row[1] !== "" ? Number(row[1]) : null;
+      const nilaiData = row[3] !== "" ? Number(row[3]) : null;
+      const nilaiAlur = row[4] !== "" ? Number(row[4]) : null;
+      const nilaiMetode = row[5] !== "" ? Number(row[5]) : null;
+      const nilaiTambah = row[6] !== "" ? Number(row[6]) : null;
+      const nilaiUrutan = row[7] !== "" ? Number(row[7]) : null;
+      const nilaiTa1 = row[8] !== "" ? Number(row[8]) : null;
+      const catatanText = row[11] !== "" ? String(row[11]).trim() : "";
+
+      let className = "";
+      if (i >= 1 && i <= 26) className = "XI PPLG 3";
+      else if (i >= 28 && i <= 53) className = "XI PPLG 2";
+      else if (i >= 56 && i <= 79) className = "XI PPLG 1";
+
+      if (className) {
+        results.push({
+          nama: name,
+          className,
+          judulProyek,
+          nilaiItem,
+          nilaiData,
+          nilaiAlur,
+          nilaiMetode,
+          nilaiTambah,
+          nilaiUrutan,
+          nilaiTa1,
+          catatan: catatanText || "Proyek Mandiri"
+        });
+      }
+    }
+  }
+  return results;
+}
+
+function parseLaporanSheet(ws: XLSX.WorkSheet) {
+  const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+  if (aoa.length < 10) return [];
+
+  const results = [];
+  for (let i = 9; i < aoa.length; i++) {
+    const row = aoa[i] as any[];
+    if (!row || !row[0] || !row[1] || String(row[2]).trim() === "" || String(row[2]).toLowerCase() === "nama") continue;
+
+    const nis = String(row[1]).replace(/\s+/g, "").trim();
+    const nama = String(row[2]).trim();
+    
+    const checklistH = row[7] === 1;
+    const checklistI = row[8] === 1;
+    const checklistJ = row[9] === 1;
+    const checklistK = row[10] === 1;
+    const skorLaporan = row[11] !== "" ? Number(row[11]) : null;
+
+    results.push({
+      nis,
+      nama,
+      checklistH,
+      checklistI,
+      checklistJ,
+      checklistK,
+      skorLaporan
+    });
+  }
+  return results;
+}
+
 export default function ImportForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const workbookRef = useRef<XLSX.WorkBook | null>(null);
   const [classes, setClasses] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [defaultSubjectId, setDefaultSubjectId] = useState<string>("");
@@ -169,8 +299,14 @@ export default function ImportForm() {
     reader.onload = (e) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
       const workbook = XLSX.read(data, { type: "array" });
+      workbookRef.current = workbook;
+
+      const gradeSheets = workbook.SheetNames.filter((name) => {
+        const lower = name.toLowerCase().replace(/\s+/g, "");
+        return lower === "xipplg1" || lower === "xipplg2" || lower === "xipplg3";
+      });
       
-      const parsedSheets: ExcelSheetData[] = workbook.SheetNames.map((sheetName) => {
+      const parsedSheets: ExcelSheetData[] = gradeSheets.map((sheetName) => {
         const ws = workbook.Sheets[sheetName];
         const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
         
@@ -302,6 +438,43 @@ export default function ImportForm() {
         };
       });
 
+      // Parse corresponding auxiliary sheets from raw workbook
+      const workbook = workbookRef.current;
+      let attendanceRows: any[] = [];
+      let laporanRows: any[] = [];
+      let filteredCatatanRows: any[] = [];
+
+      if (workbook) {
+        const attSheetName = workbook.SheetNames.find(name => {
+          const clean = name.toLowerCase().replace(/\s+/g, "");
+          return clean === "ab" + sheet.sheetName.toLowerCase().replace(/\s+/g, "");
+        });
+        if (attSheetName) {
+          attendanceRows = parseAttendanceSheet(workbook.Sheets[attSheetName]);
+        }
+
+        const repSheetName = workbook.SheetNames.find(name => {
+          const clean = name.toLowerCase().replace(/\s+/g, "");
+          return clean === "l" + sheet.sheetName.toLowerCase().replace(/\s+/g, "");
+        });
+        if (repSheetName) {
+          laporanRows = parseLaporanSheet(workbook.Sheets[repSheetName]);
+        }
+
+        const catSheetName = workbook.SheetNames.find(name => {
+          const clean = name.toLowerCase().replace(/\s+/g, "");
+          return clean === "catatan";
+        });
+        if (catSheetName) {
+          const targetClass = classes.find(c => String(c.id) === String(sheet.targetClassId));
+          const className = targetClass ? targetClass.namaKelas : "";
+          const parsedCatatan = parseCatatanSheet(workbook.Sheets[catSheetName]);
+          filteredCatatanRows = parsedCatatan.filter(r => 
+            r.className.toLowerCase().replace(/\s+/g, "") === className.toLowerCase().replace(/\s+/g, "")
+          );
+        }
+      }
+
       try {
         const res = await fetch("/api/import-excel", {
           method: "POST",
@@ -315,6 +488,9 @@ export default function ImportForm() {
                 sheetName: sheet.sheetName,
                 targetClassId: Number(sheet.targetClassId),
                 rows: mappedRows,
+                attendanceRows,
+                catatanRows: filteredCatatanRows,
+                laporanRows,
               },
             ],
           }),
