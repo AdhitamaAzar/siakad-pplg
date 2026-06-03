@@ -616,6 +616,7 @@ export async function POST(req: NextRequest) {
             const existingGrade = await tx.grade.findFirst({
               where: {
                 studentId: student.id,
+                subjectId: targetSubjectId,
                 semester,
                 tahunAjaran,
               },
@@ -983,6 +984,7 @@ export async function POST(req: NextRequest) {
           const existingGrade = await tx.grade.findFirst({
             where: {
               studentId: student.id,
+              subjectId: defaultSubject.id,
               semester,
               tahunAjaran,
             },

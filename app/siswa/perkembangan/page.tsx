@@ -8,35 +8,52 @@ import { auth }          from "@/lib/auth";
 import { redirect }      from "next/navigation";
 import prisma            from "@/lib/prisma";
 import { TrendingUp }    from "lucide-react";
+import SubjectSelect     from "../nilai/SubjectSelect";
 
 export const metadata: Metadata = { title: "Perkembangan Nilai — Siswa" };
 
 const SEMESTER     = "Genap";
 const TAHUN_AJARAN = "2025/2026";
 
-const KOMPONEN = [
-  { key: "nilaiGithub",      label: "Portfolio / Github", emoji: "🐱" },
-  { key: "nilaiApi",         label: "Tugas API",           emoji: "🔌" },
-  { key: "nilaiAdminPanel",  label: "Admin Panel",         emoji: "🖥️" },
-  { key: "nilaiLandingPage", label: "Landing Page",        emoji: "🌐" },
-  { key: "nilaiKagglePython",label: "Kaggle Python",       emoji: "🐍" },
-  { key: "nilaiKaggleSql",   label: "Kaggle SQL",          emoji: "🗄️" },
-  { key: "nilaiKaggleMl",    label: "Kaggle ML",           emoji: "🤖" },
-  { key: "nilaiUjianMl",     label: "Ujian ML",            emoji: "📝" },
-  { key: "nilaiUjianSql",    label: "Ujian SQL",           emoji: "📋" },
+const getKomponen = (isRpl: boolean) => [
+  { key: "nilaiGithub" as const,      label: isRpl ? "Portfolio / Github" : "Tugas 1", emoji: "🐱" },
+  { key: "nilaiApi" as const,         label: isRpl ? "Tugas API" : "Tugas 2",           emoji: "🔌" },
+  { key: "nilaiAdminPanel" as const,  label: isRpl ? "Admin Panel" : "Tugas 3",         emoji: "🖥️" },
+  { key: "nilaiLandingPage" as const, label: isRpl ? "Landing Page" : "Tugas 4",        emoji: "🌐" },
+  { key: "nilaiKagglePython" as const,label: isRpl ? "Kaggle Python" : "Tugas 5",       emoji: "🐍" },
+  { key: "nilaiKaggleSql" as const,   label: isRpl ? "Kaggle SQL" : "Tugas 6",          emoji: "🗄️" },
+  { key: "nilaiKaggleMl" as const,    label: isRpl ? "Kaggle ML" : "Tugas 7",           emoji: "🤖" },
+  { key: "nilaiUjianMl" as const,     label: isRpl ? "Ujian ML" : "Ujian 1",            emoji: "📝" },
+  { key: "nilaiUjianSql" as const,    label: isRpl ? "Ujian SQL" : "Ujian 2",           emoji: "📋" },
 ] as const;
 
-type GradeKey = typeof KOMPONEN[number]["key"];
+type GradeKey = ReturnType<typeof getKomponen>[number]["key"];
 
-export default async function SiswaPerkembanganPage() {
+interface PageProps {
+  searchParams: Promise<{ mapel?: string }>;
+}
+
+export default async function SiswaPerkembanganPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const sp = await searchParams;
+
+  const subjectsList = await prisma.subject.findMany({
+    orderBy: { namaMapel: "asc" },
+    select: { id: true, namaMapel: true, kodeMapel: true },
+  });
+
+  const activeSubjectId = sp.mapel ? Number(sp.mapel) : (subjectsList[0]?.id || 1);
 
   const student = await prisma.student.findUnique({
     where:   { userId: Number(session.user.id) },
     include: {
       kelas:  true,
-      grades: { where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN }, take: 1 },
+      grades: {
+        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN, subjectId: activeSubjectId },
+        take: 1
+      },
     },
   });
 
@@ -48,23 +65,30 @@ export default async function SiswaPerkembanganPage() {
     );
   }
 
+  const activeSubject = subjectsList.find((s) => s.id === activeSubjectId);
+  const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;
+  const komponen = getKomponen(isRpl);
+
   const grade = student.grades[0] ?? null;
   const nilaiList = grade
-    ? KOMPONEN.map((k) => ({ ...k, nilai: grade[k.key as GradeKey] as number | null }))
-    : KOMPONEN.map((k) => ({ ...k, nilai: null }));
+    ? komponen.map((k) => ({ ...k, nilai: grade[k.key as keyof typeof grade] as number | null }))
+    : komponen.map((k) => ({ ...k, nilai: null }));
 
   const done    = nilaiList.filter((k) => k.nilai !== null).length;
-  const total   = KOMPONEN.length;
+  const total   = komponen.length;
   const persen  = Math.round((done / total) * 100);
 
   return (
     <div className="space-y-6 max-w-[800px]">
-      <div className="flex items-center gap-3">
-        <TrendingUp size={20} className="text-indigo-400" />
-        <div>
-          <h1 className="text-xl font-bold text-white">Perkembangan Nilai</h1>
-          <p className="text-slate-500 text-sm">{SEMESTER} {TAHUN_AJARAN} · {student.kelas.namaKelas}</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <TrendingUp size={20} className="text-indigo-400" />
+          <div>
+            <h1 className="text-xl font-bold text-white">Perkembangan Nilai</h1>
+            <p className="text-slate-500 text-sm">{SEMESTER} {TAHUN_AJARAN} · {student.kelas.namaKelas}</p>
+          </div>
         </div>
+        <SubjectSelect subjects={subjectsList} activeSubjectId={activeSubjectId} />
       </div>
 
       {/* Overall progress */}

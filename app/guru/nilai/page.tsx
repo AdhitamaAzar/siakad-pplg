@@ -17,7 +17,7 @@ const TAHUN_AJARAN = "2025/2026";
 const SEMESTER     = "Genap";
 
 interface PageProps {
-  searchParams: Promise<{ kelas?: string }>;
+  searchParams: Promise<{ kelas?: string; mapel?: string }>;
 }
 
 export default async function GuruNilaiPage({ searchParams }: PageProps) {
@@ -41,6 +41,8 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
     select: { id: true, namaMapel: true, kodeMapel: true },
   });
 
+  const activeSubjectId = sp.mapel ? Number(sp.mapel) : subjectsList[0]?.id;
+
   const students = await prisma.student.findMany({
     where: { kelasId: activeKelasId },
     orderBy: { nama: "asc" },
@@ -49,7 +51,11 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
       nama: true,
       nis: true,
       grades: {
-        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+        where: {
+          semester: SEMESTER,
+          tahunAjaran: TAHUN_AJARAN,
+          subjectId: activeSubjectId,
+        },
         take: 1,
         select: {
           nilaiGithub: true,
@@ -76,6 +82,7 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
       subjectsList={subjectsList}
       students={students}
       activeKelasId={activeKelasId}
+      activeSubjectId={activeSubjectId}
       semester={SEMESTER}
       tahunAjaran={TAHUN_AJARAN}
     />

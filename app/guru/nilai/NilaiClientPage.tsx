@@ -11,19 +11,19 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Pencil, X, Save, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
-const KOMPONEN = [
-  { key: "nilaiGithub",      label: "Github",        desc: "Portfolio / Link GitHub" },
-  { key: "nilaiApi",         label: "Tugas API",     desc: "Tugas pembuatan API" },
-  { key: "nilaiAdminPanel",  label: "Admin Panel",   desc: "Tugas Admin Panel" },
-  { key: "nilaiLandingPage", label: "Landing Page",  desc: "Link Landing Page" },
-  { key: "nilaiKagglePython",label: "Kaggle Python", desc: "Kaggle Intro to Python" },
-  { key: "nilaiKaggleSql",   label: "Kaggle SQL",    desc: "Kaggle Intro to SQL" },
-  { key: "nilaiKaggleMl",    label: "Kaggle ML",     desc: "Kaggle Machine Learning" },
-  { key: "nilaiUjianMl",     label: "Ujian ML",      desc: "Ujian Online Machine Learning" },
-  { key: "nilaiUjianSql",    label: "Ujian SQL",     desc: "Ujian Online SQL" },
+const getKomponen = (isRpl: boolean) => [
+  { key: "nilaiGithub" as const,      label: isRpl ? "Github" : "Tugas 1",        desc: isRpl ? "Portfolio / Link GitHub" : "Tugas 1" },
+  { key: "nilaiApi" as const,         label: isRpl ? "Tugas API" : "Tugas 2",     desc: isRpl ? "Tugas pembuatan API" : "Tugas 2" },
+  { key: "nilaiAdminPanel" as const,  label: isRpl ? "Admin Panel" : "Tugas 3",   desc: isRpl ? "Tugas Admin Panel" : "Tugas 3" },
+  { key: "nilaiLandingPage" as const, label: isRpl ? "Landing Page" : "Tugas 4",  desc: isRpl ? "Link Landing Page" : "Tugas 4" },
+  { key: "nilaiKagglePython" as const,label: isRpl ? "Kaggle Python" : "Tugas 5", desc: isRpl ? "Kaggle Intro to Python" : "Tugas 5" },
+  { key: "nilaiKaggleSql" as const,   label: isRpl ? "Kaggle SQL" : "Tugas 6",    desc: isRpl ? "Kaggle Intro to SQL" : "Tugas 6" },
+  { key: "nilaiKaggleMl" as const,    label: isRpl ? "Kaggle ML" : "Tugas 7",     desc: isRpl ? "Kaggle Machine Learning" : "Tugas 7" },
+  { key: "nilaiUjianMl" as const,     label: isRpl ? "Ujian ML" : "Ujian 1",      desc: isRpl ? "Ujian Online Machine Learning" : "Ujian 1" },
+  { key: "nilaiUjianSql" as const,    label: isRpl ? "Ujian SQL" : "Ujian 2",     desc: isRpl ? "Ujian Online SQL" : "Ujian 2" },
 ] as const;
 
-type KomponenKey = typeof KOMPONEN[number]["key"];
+type KomponenKey = ReturnType<typeof getKomponen>[number]["key"];
 
 interface GradeData {
   nilaiGithub?: number | null;
@@ -49,9 +49,10 @@ interface Student {
 
 interface Props {
   kelasList: { id: number; namaKelas: string }[];
-  subjectsList?: any[];
+  subjectsList: { id: number; namaMapel: string; kodeMapel: string }[];
   students: Student[];
   activeKelasId: number | undefined;
+  activeSubjectId: number | undefined;
   semester: string;
   tahunAjaran: string;
 }
@@ -73,9 +74,10 @@ function Cell({ nilai }: { nilai: number | null | undefined }) {
   );
 }
 
+
 /** Hitung preview rata-rata dari form values */
-function hitungPreview(form: Record<string, string>): { rata: number | null; raport: number | null } {
-  const vals = KOMPONEN
+function hitungPreview(form: Record<string, string>, komponen: readonly any[]): { rata: number | null; raport: number | null } {
+  const vals = komponen
     .map((k) => form[k.key])
     .filter((v) => v !== "" && v !== null && v !== undefined)
     .map(Number)
@@ -88,17 +90,22 @@ function hitungPreview(form: Record<string, string>): { rata: number | null; rap
 // ─── MODAL EDIT NILAI ──────────────────────────────────────────────────────────
 function EditModal({
   student,
+  isRpl,
+  subjectId,
   onClose,
   onSaved,
 }: {
   student: Student;
+  isRpl: boolean;
+  subjectId: number | undefined;
   onClose: () => void;
   onSaved: (studentId: number, grade: GradeData) => void;
 }) {
   const grade = student.grades[0] ?? {};
+  const komponen = getKomponen(isRpl);
 
   const initialForm: Record<string, string> = {};
-  for (const k of KOMPONEN) {
+  for (const k of komponen) {
     const v = grade[k.key as KomponenKey];
     initialForm[k.key] = v != null ? String(v) : "";
   }
@@ -108,7 +115,7 @@ function EditModal({
   const [status, setStatus] = useState<"idle" | "ok" | "err">("idle");
   const [errMsg, setErrMsg] = useState("");
 
-  const preview = hitungPreview(form);
+  const preview = hitungPreview(form, komponen);
 
   function predikatLabel(n: number | null) {
     if (!n) return "—";
@@ -131,7 +138,7 @@ function EditModal({
         const res = await fetch("/api/guru/nilai", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: student.id, ...form }),
+          body: JSON.stringify({ studentId: student.id, subjectId, ...form }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) throw new Error(json.error ?? "Gagal menyimpan nilai.");
@@ -172,7 +179,7 @@ function EditModal({
         {/* Form */}
         <div className="px-6 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
           <div className="grid grid-cols-2 gap-3">
-            {KOMPONEN.map((k) => (
+            {komponen.map((k) => (
               <div key={k.key}>
                 <label className="block text-xs font-medium text-slate-400 mb-1">
                   {k.label}
@@ -266,13 +273,19 @@ function EditModal({
 // ─── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function NilaiClientPage({
   kelasList,
+  subjectsList,
   students: initialStudents,
   activeKelasId,
+  activeSubjectId,
   semester,
   tahunAjaran,
 }: Props) {
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
+
+  const activeSubject = subjectsList.find((s) => s.id === activeSubjectId);
+  const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;
+  const komponen = getKomponen(isRpl);
 
   function handleSaved(studentId: number, newGrade: GradeData) {
     setStudents((prev) =>
@@ -287,6 +300,8 @@ export default function NilaiClientPage({
       {editStudent && (
         <EditModal
           student={editStudent}
+          isRpl={isRpl}
+          subjectId={activeSubjectId}
           onClose={() => setEditStudent(null)}
           onSaved={handleSaved}
         />
@@ -308,22 +323,41 @@ export default function NilaiClientPage({
           </div>
         </div>
 
-        {/* Tab kelas */}
-        <div className="flex gap-2 flex-wrap">
-          {kelasList.map((k) => (
-            <Link
-              key={k.id}
-              href={`/guru/nilai?kelas=${k.id}`}
-              className={`
-                px-4 py-2 rounded-xl text-sm font-semibold border transition-all
-                ${k.id === activeKelasId
-                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
-                  : "bg-slate-900/60 text-slate-500 border-slate-800/60 hover:text-slate-300"}
-              `}
+        {/* Tab kelas & pemilih mapel */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex gap-2 flex-wrap">
+            {kelasList.map((k) => (
+              <Link
+                key={k.id}
+                href={`/guru/nilai?kelas=${k.id}${activeSubjectId ? `&mapel=${activeSubjectId}` : ""}`}
+                className={`
+                  px-4 py-2 rounded-xl text-sm font-semibold border transition-all
+                  ${k.id === activeKelasId
+                    ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                    : "bg-slate-900/60 text-slate-500 border-slate-800/60 hover:text-slate-300"}
+                `}
+              >
+                {k.namaKelas}
+              </Link>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mata Pelajaran:</span>
+            <select
+              value={activeSubjectId || ""}
+              onChange={(e) => {
+                window.location.href = `/guru/nilai?kelas=${activeKelasId}&mapel=${e.target.value}`;
+              }}
+              className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-300 outline-none focus:border-indigo-500 focus:bg-slate-950 transition-colors"
             >
-              {k.namaKelas}
-            </Link>
-          ))}
+              {subjectsList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.namaMapel} ({s.kodeMapel})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Tabel */}
@@ -333,7 +367,7 @@ export default function NilaiClientPage({
               <tr className="border-b border-slate-800/60">
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 sticky left-0 z-10 bg-[#0c121e] w-12 min-w-[48px] max-w-[48px]">#</th>
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 sticky left-[48px] z-10 bg-[#0c121e] min-w-[200px] border-r border-slate-800/80">Nama Siswa</th>
-                {KOMPONEN.map((k) => (
+                {komponen.map((k) => (
                   <th key={k.key} className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     {k.label}
                   </th>
@@ -354,7 +388,7 @@ export default function NilaiClientPage({
                       <div className="text-slate-200 font-medium text-sm">{s.nama}</div>
                       <div className="text-slate-600 text-[11px]">{s.nis}</div>
                     </td>
-                    {KOMPONEN.map((k) => (
+                    {komponen.map((k) => (
                       <Cell key={k.key} nilai={g ? (g[k.key as KomponenKey] as number | null) : null} />
                     ))}
                     <td className="px-3 py-2.5 text-center text-xs font-semibold text-slate-400 tabular-nums">

@@ -333,8 +333,9 @@ async function main(): Promise<void> {
       // Buat data nilai contoh
       await prisma.grade.upsert({
         where: {
-          studentId_semester_tahunAjaran: {
+          studentId_subjectId_semester_tahunAjaran: {
             studentId: student.id,
+            subjectId: defaultSubject.id,
             semester: SEMESTER,
             tahunAjaran: TAHUN_AJARAN,
           },

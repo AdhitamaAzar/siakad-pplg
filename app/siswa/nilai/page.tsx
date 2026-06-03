@@ -23,6 +23,7 @@ import {
   Award,
   Star,
 } from "lucide-react";
+import SubjectSelect from "./SubjectSelect";
 
 export const metadata: Metadata = { title: "Nilai Saya" };
 
@@ -31,73 +32,73 @@ const TAHUN_AJARAN = "2025/2026";
 
 // ─── KOMPONEN NILAI ──────────────────────────────────────────────────────────
 
-const KOMPONEN = [
+const getKomponen = (isRpl: boolean) => [
   {
     key:   "nilaiGithub"      as const,
-    label: "Portfolio / Github",
-    sub:   "Tugas proyek & repositori",
+    label: isRpl ? "Portfolio / Github" : "Tugas 1",
+    sub:   isRpl ? "Tugas proyek & repositori" : "Tugas 1",
     icon:  GitBranch,
     color: "indigo",
   },
   {
     key:   "nilaiApi"         as const,
-    label: "Tugas API",
-    sub:   "REST API development",
+    label: isRpl ? "Tugas API" : "Tugas 2",
+    sub:   isRpl ? "REST API development" : "Tugas 2",
     icon:  Code2,
     color: "violet",
   },
   {
     key:   "nilaiAdminPanel"  as const,
-    label: "Admin Panel",
-    sub:   "Dashboard administration",
+    label: isRpl ? "Admin Panel" : "Tugas 3",
+    sub:   isRpl ? "Dashboard administration" : "Tugas 3",
     icon:  LayoutDashboard,
     color: "sky",
   },
   {
     key:   "nilaiLandingPage" as const,
-    label: "Landing Page",
-    sub:   "Web design & frontend",
+    label: isRpl ? "Landing Page" : "Tugas 4",
+    sub:   isRpl ? "Web design & frontend" : "Tugas 4",
     icon:  Globe,
     color: "cyan",
   },
   {
     key:   "nilaiKagglePython" as const,
-    label: "Kaggle Python",
-    sub:   "Python programming",
+    label: isRpl ? "Kaggle Python" : "Tugas 5",
+    sub:   isRpl ? "Python programming" : "Tugas 5",
     icon:  FlaskConical,
     color: "amber",
   },
   {
     key:   "nilaiKaggleSql"   as const,
-    label: "Kaggle SQL",
-    sub:   "Intro to SQL",
+    label: isRpl ? "Kaggle SQL" : "Tugas 6",
+    sub:   isRpl ? "Intro to SQL" : "Tugas 6",
     icon:  Database,
     color: "orange",
   },
   {
     key:   "nilaiKaggleMl"    as const,
-    label: "Kaggle ML",
-    sub:   "Machine Learning intro",
+    label: isRpl ? "Kaggle ML" : "Tugas 7",
+    sub:   isRpl ? "Machine Learning intro" : "Tugas 7",
     icon:  BrainCircuit,
     color: "pink",
   },
   {
     key:   "nilaiUjianMl"     as const,
-    label: "Ujian ML",
-    sub:   "Ujian Online Machine Learning",
+    label: isRpl ? "Ujian ML" : "Ujian 1",
+    sub:   isRpl ? "Ujian Online Machine Learning" : "Ujian 1",
     icon:  ClipboardList,
     color: "rose",
   },
   {
     key:   "nilaiUjianSql"    as const,
-    label: "Ujian SQL",
-    sub:   "Ujian Online SQL",
+    label: isRpl ? "Ujian SQL" : "Ujian 2",
+    sub:   isRpl ? "Ujian Online SQL" : "Ujian 2",
     icon:  BookOpen,
     color: "teal",
   },
 ] as const;
 
-type KomponenKey = typeof KOMPONEN[number]["key"];
+type KomponenKey = ReturnType<typeof getKomponen>[number]["key"];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -141,16 +142,29 @@ const ICON_COLOR: Record<string, string> = {
 
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
-export default async function SiswaNilaiPage() {
+interface PageProps {
+  searchParams: Promise<{ mapel?: string }>;
+}
+
+export default async function SiswaNilaiPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const sp = await searchParams;
+
+  const subjectsList = await prisma.subject.findMany({
+    orderBy: { namaMapel: "asc" },
+    select: { id: true, namaMapel: true, kodeMapel: true },
+  });
+
+  const activeSubjectId = sp.mapel ? Number(sp.mapel) : (subjectsList[0]?.id || 1);
 
   // Ambil data siswa beserta nilai semester ini
   const student = await prisma.student.findUnique({
     where: { userId: Number(session.user.id) },
     include: {
       grades: {
-        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN, subjectId: activeSubjectId },
         take: 1,
       },
       kelas: true,
@@ -167,21 +181,28 @@ export default async function SiswaNilaiPage() {
 
   const grade = student.grades[0] ?? null;
 
+  const activeSubject = subjectsList.find((s) => s.id === activeSubjectId);
+  const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;
+  const komponen = getKomponen(isRpl);
+
   // Hitung nilai yang sudah diisi
-  const diisi = KOMPONEN.filter((k) => grade && grade[k.key] !== null).length;
+  const diisi = komponen.filter((k) => grade && grade[k.key as keyof typeof grade] !== null).length;
 
   return (
     <div className="space-y-6 max-w-5xl">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div>
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
-          <Star size={18} className="text-amber-400" />
-          Nilai Saya
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Semester {SEMESTER} {TAHUN_AJARAN} · {student.kelas.namaKelas}
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <Star size={18} className="text-amber-400" />
+            Nilai Saya
+          </h1>
+          <p className="text-slate-500 text-sm mt-1">
+            Semester {SEMESTER} {TAHUN_AJARAN} · {student.kelas.namaKelas}
+          </p>
+        </div>
+        <SubjectSelect subjects={subjectsList} activeSubjectId={activeSubjectId} />
       </div>
 
       {/* ── Summary card: Nilai Raport + Predikat ──────────────────────── */}
@@ -276,8 +297,8 @@ export default async function SiswaNilaiPage() {
           Komponen Nilai (9 Tugas)
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {KOMPONEN.map((k, idx) => {
-            const nilai = grade ? (grade[k.key as KomponenKey] as number | null) : null;
+          {komponen.map((k, idx) => {
+            const nilai = grade ? (grade[k.key as keyof typeof grade] as number | null) : null;
             const Icon  = k.icon;
 
             return (

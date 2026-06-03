@@ -185,7 +185,7 @@ model Grade {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([studentId, semester, tahunAjaran])
+  @@unique([studentId, subjectId, semester, tahunAjaran])
   @@map("grades")
 }
 

@@ -51,13 +51,19 @@ export async function GET(req: NextRequest) {
   }
 
   const studentId = req.nextUrl.searchParams.get("studentId");
-  if (!studentId) {
-    return NextResponse.json({ error: "studentId wajib diisi." }, { status: 400 });
+  const subjectId = req.nextUrl.searchParams.get("subjectId");
+  if (!studentId || !subjectId) {
+    return NextResponse.json({ error: "studentId dan subjectId wajib diisi." }, { status: 400 });
   }
 
   try {
     const grade = await prisma.grade.findFirst({
-      where: { studentId: Number(studentId), semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+      where: {
+        studentId: Number(studentId),
+        subjectId: Number(subjectId),
+        semester: SEMESTER,
+        tahunAjaran: TAHUN_AJARAN,
+      },
     });
     return NextResponse.json({ ok: true, grade });
   } catch (err: any) {
@@ -75,9 +81,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const studentId = Number(body.studentId);
+    const subjectId = Number(body.subjectId);
 
-    if (!studentId) {
-      return NextResponse.json({ error: "studentId wajib diisi." }, { status: 400 });
+    if (!studentId || !subjectId) {
+      return NextResponse.json({ error: "studentId dan subjectId wajib diisi." }, { status: 400 });
     }
 
     // Pastikan siswa ada
@@ -106,8 +113,9 @@ export async function POST(req: NextRequest) {
     // Upsert ke DB
     const grade = await prisma.grade.upsert({
       where: {
-        studentId_semester_tahunAjaran: {
+        studentId_subjectId_semester_tahunAjaran: {
           studentId,
+          subjectId,
           semester: SEMESTER,
           tahunAjaran: TAHUN_AJARAN,
         },
@@ -124,6 +132,7 @@ export async function POST(req: NextRequest) {
       },
       create: {
         studentId,
+        subjectId,
         semester: SEMESTER,
         tahunAjaran: TAHUN_AJARAN,
         ...kompoData,

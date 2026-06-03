@@ -12,6 +12,7 @@ import { TrendingUp, CalendarCheck, Award, BookOpen, Star, MessageSquare } from 
 import prisma from "@/lib/prisma";
 import Link from "next/link";
 import GrafikNilaiSiswa from "@/components/dashboard/GrafikNilaiSiswa";
+import SubjectSelect from "../nilai/SubjectSelect";
 
 export const metadata: Metadata = { title: "Dashboard Siswa" };
 export const revalidate = 300;
@@ -35,9 +36,22 @@ function PredikatBadge({ predikat }: { predikat: string | null }) {
   );
 }
 
-export default async function SiswaDashboardPage() {
+interface PageProps {
+  searchParams: Promise<{ mapel?: string }>;
+}
+
+export default async function SiswaDashboardPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const sp = await searchParams;
+
+  const subjectsList = await prisma.subject.findMany({
+    orderBy: { namaMapel: "asc" },
+    select: { id: true, namaMapel: true, kodeMapel: true },
+  });
+
+  const activeSubjectId = sp.mapel ? Number(sp.mapel) : (subjectsList[0]?.id || 1);
 
   // Cari data siswa berdasarkan userId dari session
   const student = await prisma.student.findUnique({
@@ -45,7 +59,7 @@ export default async function SiswaDashboardPage() {
     include: {
       kelas:  true,
       grades: {
-        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN, subjectId: activeSubjectId },
         take: 1,
       },
       attendances: {
@@ -83,6 +97,7 @@ export default async function SiswaDashboardPage() {
       where: {
         semester:    SEMESTER,
         tahunAjaran: TAHUN_AJARAN,
+        subjectId:   activeSubjectId,
         nilaiRaport: { gt: grade.nilaiRaport },
         student:     { kelasId: student.kelasId },
       },
@@ -93,16 +108,19 @@ export default async function SiswaDashboardPage() {
   const jam  = new Date().getHours();
   const sapa = jam < 11 ? "Selamat Pagi" : jam < 15 ? "Selamat Siang" : jam < 18 ? "Selamat Sore" : "Selamat Malam";
 
+  const activeSubject = subjectsList.find((s) => s.id === activeSubjectId);
+  const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;
+
   const componentsData = [
-    { name: "Github", nilai: grade?.nilaiGithub ?? null },
-    { name: "API", nilai: grade?.nilaiApi ?? null },
-    { name: "Admin", nilai: grade?.nilaiAdminPanel ?? null },
-    { name: "Landing", nilai: grade?.nilaiLandingPage ?? null },
-    { name: "Py", nilai: grade?.nilaiKagglePython ?? null },
-    { name: "SQL", nilai: grade?.nilaiKaggleSql ?? null },
-    { name: "ML", nilai: grade?.nilaiKaggleMl ?? null },
-    { name: "U.ML", nilai: grade?.nilaiUjianMl ?? null },
-    { name: "U.SQL", nilai: grade?.nilaiUjianSql ?? null },
+    { name: isRpl ? "Github" : "Tugas 1", nilai: grade?.nilaiGithub ?? null },
+    { name: isRpl ? "API" : "Tugas 2", nilai: grade?.nilaiApi ?? null },
+    { name: isRpl ? "Admin" : "Tugas 3", nilai: grade?.nilaiAdminPanel ?? null },
+    { name: isRpl ? "Landing" : "Tugas 4", nilai: grade?.nilaiLandingPage ?? null },
+    { name: isRpl ? "Py" : "Tugas 5", nilai: grade?.nilaiKagglePython ?? null },
+    { name: isRpl ? "SQL" : "Tugas 6", nilai: grade?.nilaiKaggleSql ?? null },
+    { name: isRpl ? "ML" : "Tugas 7", nilai: grade?.nilaiKaggleMl ?? null },
+    { name: isRpl ? "U.ML" : "Ujian 1", nilai: grade?.nilaiUjianMl ?? null },
+    { name: isRpl ? "U.SQL" : "Ujian 2", nilai: grade?.nilaiUjianSql ?? null },
   ];
 
   return (
@@ -116,14 +134,19 @@ export default async function SiswaDashboardPage() {
         <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-5">
           <Star size={100} />
         </div>
-        <p className="text-indigo-300 text-sm font-medium mb-1">{sapa},</p>
-        <h1 className="text-2xl font-bold text-white">{student.nama} 👋</h1>
-        <div className="flex items-center gap-3 mt-2 flex-wrap">
-          <span className="text-slate-400 text-sm">{student.kelas.namaKelas}</span>
-          <span className="text-slate-700">·</span>
-          <span className="text-slate-400 text-sm font-mono text-xs">{student.nis}</span>
-          <span className="text-slate-700">·</span>
-          <span className="text-slate-400 text-sm">{SEMESTER} {TAHUN_AJARAN}</span>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+          <div>
+            <p className="text-indigo-300 text-sm font-medium mb-1">{sapa},</p>
+            <h1 className="text-2xl font-bold text-white">{student.nama} 👋</h1>
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <span className="text-slate-400 text-sm">{student.kelas.namaKelas}</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-slate-400 text-sm font-mono text-xs">{student.nis}</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-slate-400 text-sm">{SEMESTER} {TAHUN_AJARAN}</span>
+            </div>
+          </div>
+          <SubjectSelect subjects={subjectsList} activeSubjectId={activeSubjectId} />
         </div>
       </div>
 
@@ -257,15 +280,15 @@ export default async function SiswaDashboardPage() {
               </thead>
               <tbody className="divide-y divide-slate-800/40">
                 {[
-                  { label: "Portfolio / Github",  nilai: grade.nilaiGithub },
-                  { label: "Tugas API",            nilai: grade.nilaiApi },
-                  { label: "Admin Panel",          nilai: grade.nilaiAdminPanel },
-                  { label: "Landing Page",         nilai: grade.nilaiLandingPage },
-                  { label: "Kaggle Python",        nilai: grade.nilaiKagglePython },
-                  { label: "Kaggle SQL",           nilai: grade.nilaiKaggleSql },
-                  { label: "Kaggle ML",            nilai: grade.nilaiKaggleMl },
-                  { label: "Ujian ML",             nilai: grade.nilaiUjianMl },
-                  { label: "Ujian SQL",            nilai: grade.nilaiUjianSql },
+                  { label: isRpl ? "Portfolio / Github" : "Tugas 1",  nilai: grade.nilaiGithub },
+                  { label: isRpl ? "Tugas API" : "Tugas 2",            nilai: grade.nilaiApi },
+                  { label: isRpl ? "Admin Panel" : "Tugas 3",          nilai: grade.nilaiAdminPanel },
+                  { label: isRpl ? "Landing Page" : "Tugas 4",         nilai: grade.nilaiLandingPage },
+                  { label: isRpl ? "Kaggle Python" : "Tugas 5",        nilai: grade.nilaiKagglePython },
+                  { label: isRpl ? "Kaggle SQL" : "Tugas 6",           nilai: grade.nilaiKaggleSql },
+                  { label: isRpl ? "Kaggle ML" : "Tugas 7",            nilai: grade.nilaiKaggleMl },
+                  { label: isRpl ? "Ujian ML" : "Ujian 1",             nilai: grade.nilaiUjianMl },
+                  { label: isRpl ? "Ujian SQL" : "Ujian 2",            nilai: grade.nilaiUjianSql },
                 ].map(({ label, nilai }) => (
                   <tr key={label} className="hover:bg-white/[0.02]">
                     <td className="px-4 py-2.5 text-slate-300 text-xs">{label}</td>

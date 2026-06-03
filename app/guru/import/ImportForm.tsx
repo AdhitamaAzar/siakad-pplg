@@ -20,19 +20,19 @@ import * as XLSX from "xlsx";
 
 // ─── TYPES & CONSTANTS ────────────────────────────────────────────────────────
 
-const DB_FIELDS = [
+const getDbFields = (isRpl: boolean) => [
   { key: "nis", label: "NIS (Wajib)", required: true, matchers: ["nis", "no induk", "nomor induk"] },
   { key: "nama", label: "Nama (Wajib)", required: true, matchers: ["nama", "nama siswa", "nama lengkap"] },
-  { key: "nilaiGithub", label: "Nilai Github", required: false, matchers: ["github", "portofolio", "nilai github", "portfolio"] },
-  { key: "nilaiApi", label: "Nilai API", required: false, matchers: ["api", "nilai api", "tugas api"] },
-  { key: "nilaiAdminPanel", label: "Nilai Admin Panel", required: false, matchers: ["admin", "admin panel", "nilai admin panel"] },
-  { key: "nilaiLandingPage", label: "Nilai Landing Page", required: false, matchers: ["landing", "landing page", "nilai landing page"] },
-  { key: "nilaiKagglePython", label: "Kaggle Python", required: false, matchers: ["kaggle python", "python"] },
-  { key: "nilaiKaggleSql", label: "Kaggle SQL", required: false, matchers: ["kaggle sql", "sql"] },
-  { key: "nilaiKaggleMl", label: "Kaggle ML", required: false, matchers: ["kaggle ml", "ml"] },
-  { key: "nilaiUjianMl", label: "Ujian ML", required: false, matchers: ["ujian ml", "ujian machine learning"] },
-  { key: "nilaiUjianSql", label: "Ujian SQL", required: false, matchers: ["ujian sql"] },
-] as const;
+  { key: "nilaiGithub", label: isRpl ? "Nilai Github" : "Tugas 1", required: false, matchers: isRpl ? ["github", "portofolio", "nilai github", "portfolio"] : ["tugas 1", "tugas1", "t1", "tg1", "tugas"] },
+  { key: "nilaiApi", label: isRpl ? "Nilai API" : "Tugas 2", required: false, matchers: isRpl ? ["api", "nilai api", "tugas api"] : ["tugas 2", "tugas2", "t2", "tg2"] },
+  { key: "nilaiAdminPanel", label: isRpl ? "Nilai Admin Panel" : "Tugas 3", required: false, matchers: isRpl ? ["admin", "admin panel", "nilai admin panel"] : ["tugas 3", "tugas3", "t3", "tg3"] },
+  { key: "nilaiLandingPage", label: isRpl ? "Nilai Landing Page" : "Tugas 4", required: false, matchers: isRpl ? ["landing", "landing page", "nilai landing page"] : ["tugas 4", "tugas4", "t4", "tg4"] },
+  { key: "nilaiKagglePython", label: isRpl ? "Kaggle Python" : "Tugas 5", required: false, matchers: isRpl ? ["kaggle python", "python"] : ["tugas 5", "tugas5", "t5", "tg5"] },
+  { key: "nilaiKaggleSql", label: isRpl ? "Kaggle SQL" : "Tugas 6", required: false, matchers: isRpl ? ["kaggle sql", "sql"] : ["tugas 6", "tugas6", "t6", "tg6"] },
+  { key: "nilaiKaggleMl", label: isRpl ? "Kaggle ML" : "Tugas 7", required: false, matchers: isRpl ? ["kaggle ml", "ml"] : ["tugas 7", "tugas7", "t7", "tg7"] },
+  { key: "nilaiUjianMl", label: isRpl ? "Ujian ML" : "Ujian 1", required: false, matchers: isRpl ? ["ujian ml", "ujian machine learning"] : ["ujian 1", "ujian1", "u1", "uh1", "uts", "ujian harian 1", "pts"] },
+  { key: "nilaiUjianSql", label: isRpl ? "Ujian SQL" : "Ujian 2", required: false, matchers: isRpl ? ["ujian sql"] : ["ujian 2", "ujian2", "u2", "uh2", "uas", "ujian harian 2", "pas"] },
+];
 
 interface ExcelSheetData {
   sheetName: string;
@@ -197,6 +197,10 @@ export default function ImportForm() {
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  const activeSubject = subjects.find((s) => String(s.id) === defaultSubjectId);
+  const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;
+  const dbFields = getDbFields(isRpl);
+
   // Flow states: 'upload' | 'preview' | 'importing' | 'result'
   const [step, setStep] = useState<"upload" | "preview" | "importing" | "result">("upload");
   const [file, setFile] = useState<File | null>(null);
@@ -244,6 +248,7 @@ export default function ImportForm() {
   // ─── VALIDATION ────────────────────────────────────────────────────────────
 
   const validateSheets = useCallback((targetSheets: ExcelSheetData[]) => {
+    const fields = getDbFields(isRpl);
     return targetSheets.map((sheet) => {
       if (!sheet.isSelected) return sheet;
 
@@ -271,7 +276,7 @@ export default function ImportForm() {
         const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
 
         // Validasi nilai harus 0 - 100 (lewati jika berisi "-", "Belum", atau kosong)
-        DB_FIELDS.forEach((f) => {
+        fields.forEach((f) => {
           if (f.key !== "nis" && f.key !== "nama" && sheet.columnMap[f.key]) {
             const val = row[sheet.columnMap[f.key]];
             const valStr = val !== null && val !== undefined ? String(val).trim() : "";
@@ -289,7 +294,7 @@ export default function ImportForm() {
 
       return { ...sheet, rows: validRows, validationErrors: errors };
     });
-  }, []);
+  }, [isRpl]);
 
   // ─── FILE PARSING ──────────────────────────────────────────────────────────
 
@@ -351,7 +356,8 @@ export default function ImportForm() {
 
         // Auto-mapping kolom otomatis
         const columnMap: Record<string, string> = {};
-        DB_FIELDS.forEach((field) => {
+        const fields = getDbFields(isRpl);
+        fields.forEach((field) => {
           const matchedHeader = headers.find((h) =>
             field.matchers.some((matcher) => String(h).toLowerCase().trim() === matcher)
           );
@@ -388,7 +394,7 @@ export default function ImportForm() {
       setStep("preview");
     };
     reader.readAsArrayBuffer(uploadedFile);
-  }, [classes, validateSheets]);
+  }, [classes, isRpl, validateSheets]);
 
   // ─── FILE DRAG & DROP HANDLERS ─────────────────────────────────────────────
 
@@ -410,6 +416,7 @@ export default function ImportForm() {
 
     const finalResults: NonNullable<ImportResult["sheets"]> = [];
     let isSuccessGlobal = true;
+    const fields = getDbFields(isRpl);
 
     for (let i = 0; i < activeSheets.length; i++) {
       const sheet = activeSheets[i]!;
@@ -418,7 +425,7 @@ export default function ImportForm() {
       // Transform rows sesuai pemetaan kolom
       const mappedRows = sheet.rows.map((row) => {
         const nilai: Record<string, number | null> = {};
-        DB_FIELDS.forEach((f) => {
+        fields.forEach((f) => {
           if (f.key !== "nis" && f.key !== "nama") {
             const excelHeader = sheet.columnMap[f.key];
             const rawVal = excelHeader ? row[excelHeader] : "";
@@ -679,7 +686,7 @@ export default function ImportForm() {
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400">
                     <th className="px-3 py-2">Baris</th>
-                    {DB_FIELDS.map((f) => (
+                    {dbFields.map((f) => (
                       <th key={f.key} className="px-3 py-2 whitespace-nowrap">
                         {f.label}
                       </th>
@@ -690,7 +697,7 @@ export default function ImportForm() {
                   {sheets[currentSheetIdx]?.rows.slice(0, 10).map((row, idx) => (
                     <tr key={idx} className="hover:bg-white/[0.01]">
                       <td className="px-3 py-2 text-slate-500">{idx + 1}</td>
-                      {DB_FIELDS.map((f) => {
+                      {dbFields.map((f) => {
                         const excelHeader = sheets[currentSheetIdx]!.columnMap[f.key];
                         const val = excelHeader ? row[excelHeader] : "";
                         return (
@@ -795,7 +802,7 @@ export default function ImportForm() {
                       <div className="pt-3 border-t border-slate-800/60">
                         <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">Pemetaan Kolom Excel:</p>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {DB_FIELDS.map((field) => (
+                          {dbFields.map((field) => (
                             <div key={field.key} className="space-y-1">
                               <label className="text-[9px] font-bold text-slate-400 block truncate">{field.label}</label>
                               <select
