@@ -113,6 +113,14 @@ model Student {
   kelasId Int
   kelas   Class  @relation(fields: [kelasId], references: [id])
 
+  // Field Profil / Data Penting Tambahan
+  tempatLahir  String?
+  tanggalLahir String?
+  jenisKelamin String?
+  alamat       String?
+  noHp         String?
+  namaWali     String?
+
   grades      Grade[]
   attendances Attendance[]
   notes       Note[]

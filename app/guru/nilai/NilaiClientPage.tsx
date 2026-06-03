@@ -7,7 +7,7 @@
 //         Klik Edit → modal input 9 komponen nilai + auto-kalkulasi preview.
 // =============================================================================
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { Pencil, X, Save, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
@@ -282,6 +282,10 @@ export default function NilaiClientPage({
 }: Props) {
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
+
+  useEffect(() => {
+    setStudents(initialStudents);
+  }, [initialStudents]);
 
   const activeSubject = subjectsList.find((s) => s.id === activeSubjectId);
   const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;

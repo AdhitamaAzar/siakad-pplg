@@ -437,7 +437,7 @@ export async function POST(req: NextRequest) {
         try {
           await prisma.$transaction(async (tx) => {
             const cleanNisStr = String(row.nis).replace(/\s+/g, "").trim();
-            const username = cleanNisStr.split("/")[0];
+            const username = cleanNisStr;
             let user = await tx.user.findUnique({ where: { username } });
 
             if (!user) {
@@ -822,9 +822,9 @@ export async function POST(req: NextRequest) {
     for (const row of rows) {
       try {
         await prisma.$transaction(async (tx) => {
-          // Cari atau buat user berdasarkan username = NIS pendek (NIS prefix sebelum '/')
+          // Cari atau buat user berdasarkan username = NIS lengkap
           const cleanNisStr = String(row.nis).replace(/\s+/g, "").trim();
-          const username = cleanNisStr.split("/")[0];
+          const username = cleanNisStr;
           let user = await tx.user.findUnique({ where: { username } });
 
           if (!user) {

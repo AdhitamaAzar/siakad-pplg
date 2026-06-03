@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  GraduationCap, BookOpen, Plus, Trash2, X, Loader2, School, AtSign, Hash
+  GraduationCap, BookOpen, Plus, Trash2, X, Loader2, School, AtSign, Hash, Edit2
 } from "lucide-react";
 
 interface ClassItem {
@@ -63,6 +63,60 @@ export default function GuruClientPage({ teachers, classes, subjects }: GuruClie
   // Form Fields
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
+
+  // Edit Teacher State
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editTeacher, setEditTeacher] = useState<TeacherItem | null>(null);
+  const [editNama, setEditNama] = useState("");
+  const [editNip, setEditNip] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editErrorMsg, setEditErrorMsg] = useState("");
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+
+  function openEditModal(t: TeacherItem) {
+    setEditTeacher(t);
+    setEditNama(t.nama);
+    setEditNip(t.nip);
+    setEditEmail(t.email || "");
+    setEditErrorMsg("");
+    setIsEditOpen(true);
+  }
+
+  async function handleEditTeacher() {
+    if (!editTeacher || !editNama.trim() || !editNip.trim()) {
+      setEditErrorMsg("Nama dan NIP wajib diisi.");
+      return;
+    }
+
+    setIsEditSubmitting(true);
+    setEditErrorMsg("");
+
+    try {
+      const res = await fetch("/api/admin/guru", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editTeacher.id,
+          nama: editNama.trim(),
+          nip: editNip.trim(),
+          email: editEmail.trim() || null,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal mengupdate data guru.");
+      }
+
+      setIsEditOpen(false);
+      router.refresh();
+    } catch (err: any) {
+      setEditErrorMsg(err.message);
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  }
 
   // Actions
   function openAssignModal(t: TeacherItem) {
@@ -236,16 +290,25 @@ export default function GuruClientPage({ teachers, classes, subjects }: GuruClie
                       </div>
                     </td>
 
-                    {/* Aksi */}
-                    <td className="px-5 py-4 text-right">
-                      <button
-                        onClick={() => openAssignModal(t)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500 hover:bg-indigo-600 text-white transition-colors cursor-pointer"
-                      >
-                        <Plus size={12} />
-                        Tugaskan Mapel
-                      </button>
-                    </td>
+                     {/* Aksi */}
+                     <td className="px-5 py-4 text-right">
+                       <div className="flex items-center justify-end gap-2">
+                         <button
+                           onClick={() => openEditModal(t)}
+                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                         >
+                           <Edit2 size={12} />
+                           Edit
+                         </button>
+                         <button
+                           onClick={() => openAssignModal(t)}
+                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500 hover:bg-indigo-600 text-white transition-colors cursor-pointer"
+                         >
+                           <Plus size={12} />
+                           Tugaskan Mapel
+                         </button>
+                       </div>
+                     </td>
                   </tr>
                 ))
               )}
@@ -331,6 +394,81 @@ export default function GuruClientPage({ teachers, classes, subjects }: GuruClie
               >
                 {isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
                 {isSubmitting ? "Memproses..." : "Tugaskan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Teacher Modal */}
+      {isEditOpen && editTeacher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white">Edit Data Guru</h3>
+              <button onClick={() => setIsEditOpen(false)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300">
+                <X size={16} />
+              </button>
+            </div>
+
+            {editErrorMsg && (
+              <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-400">
+                {editErrorMsg}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {/* Nama */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-400">Nama Lengkap</label>
+                <input
+                  type="text"
+                  value={editNama}
+                  onChange={(e) => setEditNama(e.target.value)}
+                  placeholder="Masukkan nama lengkap..."
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500/50"
+                />
+              </div>
+
+              {/* NIP */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-400">NIP (Nomor Induk Pegawai)</label>
+                <input
+                  type="text"
+                  value={editNip}
+                  onChange={(e) => setEditNip(e.target.value)}
+                  placeholder="Masukkan NIP..."
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500/50"
+                />
+              </div>
+
+              {/* Email */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-400">Email (Opsional)</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  placeholder="Masukkan email..."
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500/50"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
+              <button
+                onClick={() => setIsEditOpen(false)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleEditTeacher}
+                disabled={isEditSubmitting}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+              >
+                {isEditSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+                {isEditSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
               </button>
             </div>
           </div>

@@ -1,15 +1,16 @@
 // =============================================================================
 // FILE: app/siswa/laporan/page.tsx
-// TUJUAN: Laporan akhir semester untuk siswa — ringkasan lengkap nilai & absensi.
+// TUJUAN: Laporan akhir semester untuk siswa — status tugas laporan & absensi.
+//         Menyembunyikan nilai/skor akademik untuk menjaga privasi nilai.
 // =============================================================================
 
 import type { Metadata } from "next";
 import { auth }          from "@/lib/auth";
 import { redirect }      from "next/navigation";
 import prisma            from "@/lib/prisma";
-import { FileText, Award, CalendarCheck, TrendingUp } from "lucide-react";
+import { FileText, CheckCircle2, XCircle, CalendarCheck, CheckSquare } from "lucide-react";
 
-export const metadata: Metadata = { title: "Laporan Akhir — Siswa" };
+export const metadata: Metadata = { title: "Laporan Akhir — Portal Siswa" };
 
 const SEMESTER     = "Genap";
 const TAHUN_AJARAN = "2025/2026";
@@ -22,123 +23,114 @@ export default async function SiswaLaporanPage() {
     where:   { userId: Number(session.user.id) },
     include: {
       kelas:       true,
-      grades:      { where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN }, take: 1 },
       attendances: { where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN }, take: 1 },
+      reports:     { where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN }, take: 1 },
     },
   });
 
   if (!student) {
     return (
-      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-8 text-center">
+      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-8 text-center bg-slate-950">
         <p className="text-slate-400">Data siswa tidak ditemukan.</p>
       </div>
     );
   }
 
-  const grade      = student.grades[0]      ?? null;
   const attendance = student.attendances[0] ?? null;
+  const report     = student.reports[0]     ?? null;
+
+  const checklistItems = [
+    { label: "Tugas Laporan Keuangan / Kewirausahaan (H)", completed: report?.checklistH ?? false },
+    { label: "Tugas Laporan Kerja Lapangan / Praktek (I)", completed: report?.checklistI ?? false },
+    { label: "Tugas Laporan Dokumentasi Proyek (J)", completed: report?.checklistJ ?? false },
+    { label: "Tugas Laporan Presentasi Akhir (K)", completed: report?.checklistK ?? false },
+  ];
 
   return (
-    <div className="space-y-6 max-w-[800px]">
+    <div className="space-y-6 max-w-[800px] bg-slate-950 px-2 py-4">
+      {/* HEADER */}
       <div className="flex items-center gap-3">
-        <FileText size={20} className="text-indigo-400" />
+        <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+          <FileText size={20} className="text-indigo-400" />
+        </div>
         <div>
-          <h1 className="text-xl font-bold text-white">Laporan Akhir Semester</h1>
-          <p className="text-slate-500 text-sm">{SEMESTER} {TAHUN_AJARAN} · {student.kelas.namaKelas}</p>
+          <h1 className="text-xl font-bold text-white">Laporan Perkembangan Semester</h1>
+          <p className="text-slate-500 text-sm">{SEMESTER} {TAHUN_AJARAN} · Kelas {student.kelas.namaKelas}</p>
         </div>
       </div>
 
-      {/* Student card */}
+      {/* Student Profile Card */}
       <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-6 flex items-center gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
-          <span className="text-2xl font-bold text-indigo-300">{student.nama.charAt(0)}</span>
+        <div className="w-16 h-16 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300">
+          {student.nama.charAt(0)}
         </div>
         <div>
           <h2 className="text-lg font-bold text-white">{student.nama}</h2>
           <p className="text-slate-400 text-sm">NIS: {student.nis}</p>
-          <p className="text-slate-500 text-xs">{student.kelas.namaKelas}</p>
+          <p className="text-slate-500 text-xs">Wali Murid: {student.namaWali || "—"}</p>
         </div>
       </div>
 
-      {/* Ringkasan nilai */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
-          <TrendingUp size={16} className="text-indigo-400 mb-2" />
-          <p className="text-2xl font-bold text-white">{grade?.nilaiRaport ?? "—"}</p>
-          <p className="text-xs text-slate-400 mt-0.5">Nilai Raport</p>
-        </div>
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
-          <Award size={16} className="text-amber-400 mb-2" />
-          <p className="text-lg font-bold text-white">{grade?.predikat ?? "—"}</p>
-          <p className="text-xs text-slate-400 mt-0.5">Predikat</p>
-        </div>
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
-          <CalendarCheck size={16} className="text-emerald-400 mb-2" />
-          <p className="text-2xl font-bold text-white">{attendance?.persentaseHadir ?? "—"}{attendance ? "%" : ""}</p>
-          <p className="text-xs text-slate-400 mt-0.5">Kehadiran</p>
-        </div>
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
-          <div className={`w-3 h-3 rounded-full mb-2 ${grade?.statusTuntas === "TUNTAS" ? "bg-emerald-400" : "bg-rose-400"}`} />
-          <p className="text-lg font-bold text-white">{grade?.statusTuntas ?? "—"}</p>
-          <p className="text-xs text-slate-400 mt-0.5">Status</p>
-        </div>
-      </div>
-
-      {/* Detail komponen */}
-      {grade && (
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-800/60">
-            <h3 className="text-sm font-semibold text-slate-300">Detail Nilai Komponen</h3>
+      {/* Stats row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Kehadiran */}
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Total Kehadiran</span>
+            <span className="text-2xl font-bold text-white mt-1 block">
+              {attendance ? `${attendance.persentaseHadir}%` : "—"}
+            </span>
+            <span className="text-xs text-slate-500 mt-1 block">
+              {attendance ? `Siswa Hadir: ${attendance.totalHadir} kali` : "Belum ada rekap"}
+            </span>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-800/60">
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Komponen</th>
-                <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">Nilai</th>
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Keterangan</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/40">
-              {[
-                { label: "Portfolio / Github", nilai: grade.nilaiGithub },
-                { label: "Tugas API",          nilai: grade.nilaiApi },
-                { label: "Admin Panel",        nilai: grade.nilaiAdminPanel },
-                { label: "Landing Page",       nilai: grade.nilaiLandingPage },
-                { label: "Kaggle Python",      nilai: grade.nilaiKagglePython },
-                { label: "Kaggle SQL",         nilai: grade.nilaiKaggleSql },
-                { label: "Kaggle ML",          nilai: grade.nilaiKaggleMl },
-                { label: "Ujian ML",           nilai: grade.nilaiUjianMl },
-                { label: "Ujian SQL",          nilai: grade.nilaiUjianSql },
-              ].map(({ label, nilai }) => (
-                <tr key={label} className="hover:bg-white/[0.02]">
-                  <td className="px-4 py-2.5 text-slate-300 text-xs">{label}</td>
-                  <td className="px-4 py-2.5 text-center">
-                    <span className={`text-sm font-bold tabular-nums ${
-                      nilai === null ? "text-slate-700" :
-                      nilai >= 90 ? "text-emerald-400" :
-                      nilai >= 75 ? "text-indigo-400" :
-                      nilai >= 60 ? "text-amber-400" : "text-rose-400"
-                    }`}>{nilai ?? "—"}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-600">
-                    {nilai === null ? "Belum dikerjakan" :
-                     nilai >= 90 ? "Sangat Baik" :
-                     nilai >= 75 ? "Baik" :
-                     nilai >= 60 ? "Cukup" : "Perlu Bimbingan"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-slate-700/60 bg-slate-800/30">
-                <td className="px-4 py-3 text-xs font-semibold text-slate-400">Rata-rata</td>
-                <td className="px-4 py-3 text-center text-sm font-bold text-indigo-300 tabular-nums">{grade.rataRata?.toFixed(1) ?? "—"}</td>
-                <td className="px-4 py-3 text-xs text-slate-600">Nilai Raport: {grade.nilaiRaport ?? "—"}</td>
-              </tr>
-            </tfoot>
-          </table>
+          <CalendarCheck size={28} className="text-sky-400 opacity-60" />
         </div>
-      )}
+
+        {/* Status Kelulusan */}
+        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Status Akhir</span>
+            <span className="text-xl font-bold text-white mt-1 block">
+              {report?.statusKelulusan || "DALAM PROSES"}
+            </span>
+            <span className="text-xs text-slate-500 mt-1 block">
+              Tahun Ajaran {TAHUN_AJARAN}
+            </span>
+          </div>
+          <CheckSquare size={28} className="text-emerald-400 opacity-60" />
+        </div>
+      </div>
+
+      {/* Checklist Laporan */}
+      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-6 space-y-4">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+          <CheckSquare size={16} className="text-indigo-400" />
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Checklist Tugas Laporan Akhir</h3>
+        </div>
+
+        <div className="space-y-3">
+          {checklistItems.map((item, idx) => (
+            <div key={idx} className="flex items-center justify-between p-3.5 rounded-xl border border-slate-800 bg-slate-950/40">
+              <span className="text-xs text-slate-350">{item.label}</span>
+              <div className="shrink-0 ml-4">
+                {item.completed ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-400 ring-1 ring-emerald-500/30">
+                    <CheckCircle2 size={12} />
+                    Selesai
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-700/30">
+                    <XCircle size={12} />
+                    Belum Kumpul
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
     </div>
   );
 }

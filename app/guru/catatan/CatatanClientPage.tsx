@@ -1,9 +1,10 @@
 // =============================================================================
 // FILE: app/guru/catatan/CatatanClientPage.tsx
-// TUJUAN: Halaman Client Component untuk manajemen Catatan & Skor Proyek Siswa.
+// TUJUAN: Halaman Client Component untuk manajemen Catatan & Evaluasi Siswa.
 //         - Tampilkan list siswa sekelas
 //         - Accordion untuk ekspansi catatan per siswa
-//         - Modal formulir tambah/edit catatan lengkap dengan 7 komponen skor
+//         - Modal formulir tambah/edit catatan lengkap dengan pilihan kriteria RPL
+//           atau penilaian evaluasi universal (untuk guru non-RPL).
 //         - Terkoneksi ke API endpoint /api/guru/catatan
 // =============================================================================
 
@@ -14,7 +15,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   MessageSquare, Plus, Edit2, Trash2, X, Loader2,
-  ChevronDown, ChevronRight, FileText, CheckCircle, Info
+  ChevronDown, ChevronRight, FileText, CheckCircle, Info, Award
 } from "lucide-react";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -76,6 +77,11 @@ export default function CatatanClientPage({
   
   const [judulProyek, setJudulProyek] = useState("");
   const [catatan, setCatatan] = useState("");
+  
+  // Toggle Kriteria RPL
+  const [showRplCriteria, setShowRplCriteria] = useState(false);
+  
+  // 7 RPL Component Scores
   const [nilaiItem, setNilaiItem] = useState("");
   const [nilaiData, setNilaiData] = useState("");
   const [nilaiAlur, setNilaiAlur] = useState("");
@@ -84,13 +90,20 @@ export default function CatatanClientPage({
   const [nilaiUrutan, setNilaiUrutan] = useState("");
   const [nilaiTa1, setNilaiTa1] = useState("");
 
+  // Universal Score (for non-RPL)
+  const [nilaiTotalInput, setNilaiTotalInput] = useState("");
+
   // ── Form Actions ─────────────────────────────────────────────────────────
 
   function openAddModal(student: Student) {
     setSelectedStudent(student);
     setEditingNote(null);
-    setJudulProyek("Proyek Mandiri");
+    setJudulProyek("Kegiatan / Evaluasi Mandiri");
     setCatatan("");
+    
+    // Default non-RPL criteria (universal)
+    setShowRplCriteria(false);
+    
     setNilaiItem("");
     setNilaiData("");
     setNilaiAlur("");
@@ -98,6 +111,8 @@ export default function CatatanClientPage({
     setNilaiTambah("");
     setNilaiUrutan("");
     setNilaiTa1("");
+    setNilaiTotalInput("");
+    
     setErrorMsg("");
     setIsModalOpen(true);
   }
@@ -107,6 +122,18 @@ export default function CatatanClientPage({
     setEditingNote(note);
     setJudulProyek(note.judulProyek || "");
     setCatatan(note.catatan);
+
+    const hasComponents = 
+      note.nilaiItem !== null || 
+      note.nilaiData !== null || 
+      note.nilaiAlur !== null || 
+      note.nilaiMetode !== null || 
+      note.nilaiTambah !== null || 
+      note.nilaiUrutan !== null || 
+      note.nilaiTa1 !== null;
+
+    setShowRplCriteria(hasComponents);
+
     setNilaiItem(note.nilaiItem?.toString() || "");
     setNilaiData(note.nilaiData?.toString() || "");
     setNilaiAlur(note.nilaiAlur?.toString() || "");
@@ -114,13 +141,16 @@ export default function CatatanClientPage({
     setNilaiTambah(note.nilaiTambah?.toString() || "");
     setNilaiUrutan(note.nilaiUrutan?.toString() || "");
     setNilaiTa1(note.nilaiTa1?.toString() || "");
+    
+    setNilaiTotalInput(note.nilaiTotal?.toString() || "");
+    
     setErrorMsg("");
     setIsModalOpen(true);
   }
 
   async function handleSave() {
     if (!catatan.trim()) {
-      setErrorMsg("Kolom catatan masukan wajib diisi.");
+      setErrorMsg("Kolom catatan evaluasi wajib diisi.");
       return;
     }
 
@@ -132,13 +162,16 @@ export default function CatatanClientPage({
       studentId: selectedStudent?.id,
       judulProyek,
       catatan,
-      nilaiItem: nilaiItem === "" ? null : Number(nilaiItem),
-      nilaiData: nilaiData === "" ? null : Number(nilaiData),
-      nilaiAlur: nilaiAlur === "" ? null : Number(nilaiAlur),
-      nilaiMetode: nilaiMetode === "" ? null : Number(nilaiMetode),
-      nilaiTambah: nilaiTambah === "" ? null : Number(nilaiTambah),
-      nilaiUrutan: nilaiUrutan === "" ? null : Number(nilaiUrutan),
-      nilaiTa1: nilaiTa1 === "" ? null : Number(nilaiTa1),
+      // Jika kriteria RPL diaktifkan, kirim nilai komponen
+      nilaiItem: showRplCriteria && nilaiItem !== "" ? Number(nilaiItem) : null,
+      nilaiData: showRplCriteria && nilaiData !== "" ? Number(nilaiData) : null,
+      nilaiAlur: showRplCriteria && nilaiAlur !== "" ? Number(nilaiAlur) : null,
+      nilaiMetode: showRplCriteria && nilaiMetode !== "" ? Number(nilaiMetode) : null,
+      nilaiTambah: showRplCriteria && nilaiTambah !== "" ? Number(nilaiTambah) : null,
+      nilaiUrutan: showRplCriteria && nilaiUrutan !== "" ? Number(nilaiUrutan) : null,
+      nilaiTa1: showRplCriteria && nilaiTa1 !== "" ? Number(nilaiTa1) : null,
+      // Jika kriteria RPL dinonaktifkan, kirim nilai total evaluasi secara langsung
+      nilaiTotal: !showRplCriteria && nilaiTotalInput !== "" ? Number(nilaiTotalInput) : null,
     };
 
     try {
@@ -164,7 +197,7 @@ export default function CatatanClientPage({
   }
 
   async function handleDelete(noteId: number) {
-    if (!confirm("Apakah Anda yakin ingin menghapus catatan ini? Nilai TA1 yang terikat juga akan terpengaruh.")) return;
+    if (!confirm("Apakah Anda yakin ingin menghapus catatan ini?")) return;
 
     try {
       const res = await fetch(`/api/guru/catatan?id=${noteId}`, {
@@ -198,10 +231,10 @@ export default function CatatanClientPage({
       <div>
         <div className="flex items-center gap-2 mb-1">
           <MessageSquare className="h-6 w-6 text-emerald-400" />
-          <h1 className="text-xl font-bold text-white">Catatan Guru & Projek</h1>
+          <h1 className="text-xl font-bold text-white">Catatan & Evaluasi Guru</h1>
         </div>
         <p className="text-slate-500 text-sm">
-          Berikan evaluasi, bimbingan proyek, dan isi nilai tugas akhir siswa per kelas.
+          Berikan evaluasi, catatan bimbingan, dan masukan perkembangan siswa per kelas secara universal.
         </p>
       </div>
 
@@ -258,7 +291,7 @@ export default function CatatanClientPage({
                   {/* Badge Jumlah Catatan */}
                   {hasNotes ? (
                     <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      {student.notes.length} proyek
+                      {student.notes.length} catatan
                     </span>
                   ) : (
                     <span className="text-xs text-slate-600">Belum ada catatan</span>
@@ -272,10 +305,10 @@ export default function CatatanClientPage({
               {isExpanded && (
                 <div className="px-5 pb-5 border-t border-slate-800/40 pt-4 space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-semibold text-slate-500">Daftar Proyek / Evaluasi</span>
+                    <span className="text-xs font-semibold text-slate-500">Riwayat Catatan Evaluasi</span>
                     <button
                       onClick={() => openAddModal(student)}
-                      className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors"
+                      className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors cursor-pointer"
                     >
                       <Plus size={13} />
                       Tambah Catatan
@@ -284,71 +317,91 @@ export default function CatatanClientPage({
 
                   {!hasNotes ? (
                     <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center bg-slate-900/10">
-                      <p className="text-xs text-slate-500">Siswa ini belum memiliki catatan proyek.</p>
+                      <p className="text-xs text-slate-500">Siswa ini belum memiliki catatan evaluasi.</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {student.notes.map((note) => (
-                        <div key={note.id} className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-4 space-y-3 relative">
-                          {/* Judul & Aksi */}
-                          <div className="flex justify-between items-start gap-4">
-                            <div>
-                              <h4 className="text-sm font-bold text-white">{note.judulProyek || "Proyek Mandiri"}</h4>
-                              <p className="text-[10px] text-slate-500 mt-0.5">
-                                Oleh: <span className="text-slate-400 font-semibold">{note.teacher.nama}</span> · {new Date(note.createdAt).toLocaleDateString("id-ID", { dateStyle: "medium" })}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                onClick={() => openEditModal(student, note)}
-                                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
-                                title="Edit Catatan"
-                              >
-                                <Edit2 size={12} />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(note.id)}
-                                className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors"
-                                title="Hapus Catatan"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          </div>
+                      {student.notes.map((note) => {
+                        const hasComponents = 
+                          note.nilaiItem !== null || 
+                          note.nilaiData !== null || 
+                          note.nilaiAlur !== null || 
+                          note.nilaiMetode !== null || 
+                          note.nilaiTambah !== null || 
+                          note.nilaiUrutan !== null || 
+                          note.nilaiTa1 !== null;
 
-                          {/* Teks Masukan */}
-                          <div className="text-xs text-slate-400 whitespace-pre-line leading-relaxed bg-white/[0.01] p-3 rounded-lg border border-white/5">
-                            {note.catatan}
-                          </div>
-
-                          {/* Nilai Komponen */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-                            {[
-                              { label: "Item", val: note.nilaiItem },
-                              { label: "Data", val: note.nilaiData },
-                              { label: "Alur", val: note.nilaiAlur },
-                              { label: "Metode", val: note.nilaiMetode },
-                              { label: "Inovasi", val: note.nilaiTambah },
-                              { label: "Saji", val: note.nilaiUrutan },
-                              { label: "TA1", val: note.nilaiTa1 },
-                            ].map(({ label, val }) => (
-                              <div key={label} className="rounded-lg bg-slate-900/60 border border-slate-800/40 p-2 text-center">
-                                <p className="text-[9px] uppercase tracking-wider text-slate-500">{label}</p>
-                                <p className={`text-xs font-bold mt-0.5 ${val ? "text-indigo-400" : "text-slate-700"}`}>
-                                  {val ?? "—"}
+                        return (
+                          <div key={note.id} className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-4 space-y-3 relative">
+                            {/* Judul & Aksi */}
+                            <div className="flex justify-between items-start gap-4">
+                              <div>
+                                <h4 className="text-sm font-bold text-white">{note.judulProyek || "Evaluasi Belajar"}</h4>
+                                <p className="text-[10px] text-slate-500 mt-0.5">
+                                  Oleh: <span className="text-slate-400 font-semibold">{note.teacher.nama}</span> · {new Date(note.createdAt).toLocaleDateString("id-ID", { dateStyle: "medium" })}
                                 </p>
                               </div>
-                            ))}
-                            {/* Total */}
-                            <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-center">
-                              <p className="text-[9px] uppercase tracking-wider text-indigo-400 font-bold">Total</p>
-                              <p className="text-xs font-black mt-0.5 text-indigo-300">
-                                {note.nilaiTotal ?? "—"}
-                              </p>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() => openEditModal(student, note)}
+                                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                                  title="Edit Catatan"
+                                >
+                                  <Edit2 size={12} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(note.id)}
+                                  className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+                                  title="Hapus Catatan"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
                             </div>
+
+                            {/* Teks Masukan */}
+                            <div className="text-xs text-slate-400 whitespace-pre-line leading-relaxed bg-white/[0.01] p-3 rounded-lg border border-white/5">
+                              {note.catatan}
+                            </div>
+
+                            {/* Nilai Komponen / Evaluasi */}
+                            {hasComponents ? (
+                              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+                                {[
+                                  { label: "Item", val: note.nilaiItem },
+                                  { label: "Data", val: note.nilaiData },
+                                  { label: "Alur", val: note.nilaiAlur },
+                                  { label: "Metode", val: note.nilaiMetode },
+                                  { label: "Inovasi", val: note.nilaiTambah },
+                                  { label: "Saji", val: note.nilaiUrutan },
+                                  { label: "TA1", val: note.nilaiTa1 },
+                                ].map(({ label, val }) => (
+                                  <div key={label} className="rounded-lg bg-slate-900/60 border border-slate-800/40 p-2 text-center">
+                                    <p className="text-[9px] uppercase tracking-wider text-slate-500">{label}</p>
+                                    <p className={`text-xs font-bold mt-0.5 ${val ? "text-indigo-400" : "text-slate-700"}`}>
+                                      {val ?? "—"}
+                                    </p>
+                                  </div>
+                                ))}
+                                {/* Total */}
+                                <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-center">
+                                  <p className="text-[9px] uppercase tracking-wider text-indigo-400 font-bold">Total</p>
+                                  <p className="text-xs font-black mt-0.5 text-indigo-300">
+                                    {note.nilaiTotal ?? "—"}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              note.nilaiTotal !== null && (
+                                <div className="flex items-center gap-1.5 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-xl text-indigo-300 w-fit">
+                                  <Award size={13} />
+                                  <span className="text-xs font-bold">Nilai Evaluasi: {note.nilaiTotal}</span>
+                                </div>
+                              )
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -372,7 +425,7 @@ export default function CatatanClientPage({
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-white">
-                  {editingNote ? "Edit Catatan Proyek" : "Tambah Catatan Proyek"}
+                  {editingNote ? "Edit Catatan Evaluasi" : "Tambah Catatan Evaluasi"}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">Siswa: {selectedStudent?.nama}</p>
               </div>
@@ -384,7 +437,6 @@ export default function CatatanClientPage({
               </button>
             </div>
 
-            {/* Error Message */}
             {errorMsg && (
               <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-400">
                 {errorMsg}
@@ -392,51 +444,80 @@ export default function CatatanClientPage({
             )}
 
             {/* Inputs */}
-            <div className="space-y-3">
-              {/* Judul Proyek */}
+            <div className="space-y-4">
+              {/* Judul Catatan / Kegiatan */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-400">Nama / Tema Proyek</label>
+                <label className="text-xs font-semibold text-slate-400">Judul Catatan / Kegiatan</label>
                 <input
                   type="text"
                   value={judulProyek}
                   onChange={(e) => setJudulProyek(e.target.value)}
-                  placeholder="Contoh: Deteksi Penyakit Kulit dengan CNN"
+                  placeholder="Contoh: Evaluasi Belajar Semester Genap / Proyek Mandiri"
                   className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-indigo-500/50"
                 />
               </div>
 
-              {/* Catatan / Feedback */}
+              {/* Catatan Evaluasi / Umpan Balik */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-400">Catatan Masukan / Feedback Guru</label>
+                <label className="text-xs font-semibold text-slate-400">Catatan Evaluasi / Umpan Balik</label>
                 <textarea
                   value={catatan}
                   onChange={(e) => setCatatan(e.target.value)}
-                  placeholder="Tuliskan catatan kemajuan proyek, saran revisi, atau evaluasi portofolio siswa..."
+                  placeholder="Tuliskan catatan evaluasi perkembangan belajar, saran bimbingan, atau umpan balik perkembangan siswa..."
                   rows={4}
                   className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-indigo-500/50 resize-none"
                 />
               </div>
 
-              {/* Grid Nilai Komponen */}
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-400 block mb-1">Skor Komponen Proyek (0-100, Opsional)</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {scoreLabels.map(({ label, value, setter }) => (
-                    <div key={label} className="space-y-1 p-2 rounded-lg bg-slate-950 border border-slate-800/40">
-                      <span className="text-[10px] text-slate-500 font-semibold">{label}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={value}
-                        onChange={(e) => setter(e.target.value)}
-                        placeholder="—"
-                        className="w-full bg-transparent text-xs text-indigo-400 font-bold outline-none border-none tabular-nums"
-                      />
-                    </div>
-                  ))}
-                </div>
+              {/* Checkbox RPL */}
+              <div className="flex items-center gap-2 p-3.5 rounded-xl border border-slate-800 bg-slate-950/40 select-none">
+                <input
+                  type="checkbox"
+                  id="toggleRpl"
+                  checked={showRplCriteria}
+                  onChange={(e) => setShowRplCriteria(e.target.checked)}
+                  className="rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-0 cursor-pointer h-4 w-4"
+                />
+                <label htmlFor="toggleRpl" className="text-xs font-medium text-slate-350 cursor-pointer">
+                  Tampilkan Penilaian Rinci (Kriteria Proyek RPL)
+                </label>
               </div>
+
+              {/* Grid Nilai Komponen (jika diaktifkan) atau Nilai Evaluasi tunggal (jika dinonaktifkan) */}
+              {showRplCriteria ? (
+                <div className="space-y-1.5 animate-fadeIn">
+                  <label className="text-xs font-semibold text-slate-400 block mb-1">Skor Komponen Proyek (0-100, Opsional)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {scoreLabels.map(({ label, value, setter }) => (
+                      <div key={label} className="space-y-1 p-2 rounded-lg bg-slate-950 border border-slate-800/40">
+                        <span className="text-[10px] text-slate-500 font-semibold">{label}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={value}
+                          onChange={(e) => setter(e.target.value)}
+                          placeholder="—"
+                          className="w-full bg-transparent text-xs text-indigo-400 font-bold outline-none border-none tabular-nums"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1 animate-fadeIn">
+                  <label className="text-xs font-semibold text-slate-400">Nilai Evaluasi (0-100, Opsional)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={nilaiTotalInput}
+                    onChange={(e) => setNilaiTotalInput(e.target.value)}
+                    placeholder="Masukkan nilai keseluruhan (Contoh: 85)"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-indigo-400 font-bold placeholder-slate-600 outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Actions */}

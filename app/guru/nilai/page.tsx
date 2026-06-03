@@ -78,6 +78,7 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
 
   return (
     <NilaiClientPage
+      key={`${activeKelasId}-${activeSubjectId}`}
       kelasList={kelasList}
       subjectsList={subjectsList}
       students={students}

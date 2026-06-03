@@ -149,7 +149,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Guru penanggung jawab tidak ditemukan." }, { status: 400 });
     }
 
-    const nilaiTotal = hitungTotalSkor(body);
+    let nilaiTotal = body.nilaiTotal !== null && body.nilaiTotal !== undefined && body.nilaiTotal !== "" ? Number(body.nilaiTotal) : null;
+    if (nilaiTotal === null) {
+      nilaiTotal = hitungTotalSkor(body);
+    }
 
     const note = await prisma.note.create({
       data: {
@@ -194,7 +197,10 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "ID dan catatan wajib diisi." }, { status: 400 });
     }
 
-    const nilaiTotal = hitungTotalSkor(body);
+    let nilaiTotal = body.nilaiTotal !== null && body.nilaiTotal !== undefined && body.nilaiTotal !== "" ? Number(body.nilaiTotal) : null;
+    if (nilaiTotal === null) {
+      nilaiTotal = hitungTotalSkor(body);
+    }
 
     const note = await prisma.note.update({
       where: { id },

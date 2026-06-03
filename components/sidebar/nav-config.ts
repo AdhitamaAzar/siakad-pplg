@@ -266,11 +266,6 @@ export const siswaNav: SidebarConfig = {
       group: "Akademik Saya",
       items: [
         {
-          label: "Nilai Saya",
-          href: "/siswa/nilai",
-          icon: ClipboardList,
-        },
-        {
           label: "Absensi Saya",
           href: "/siswa/absensi",
           icon: CalendarCheck,
@@ -290,11 +285,6 @@ export const siswaNav: SidebarConfig = {
     {
       group: "Informasi",
       items: [
-        {
-          label: "Perkembangan Nilai",
-          href: "/siswa/perkembangan",
-          icon: TrendingUp,
-        },
         {
           label: "Ranking Kelas",
           href: "/siswa/ranking",

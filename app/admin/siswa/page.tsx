@@ -35,6 +35,10 @@ export default async function SiswaPage() {
     ],
   });
 
+  const classes = await prisma.class.findMany({
+    orderBy: { namaKelas: 'asc' },
+  });
+
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10">
       {/* ── Page header ── */}
@@ -69,7 +73,7 @@ export default async function SiswaPage() {
       </div>
 
       {/* ── Client component with filter tabs ── */}
-      <SiswaClientPage students={students} />
+      <SiswaClientPage students={students} classes={classes} />
     </div>
   );
 }
