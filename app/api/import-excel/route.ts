@@ -539,21 +539,9 @@ export async function POST(req: NextRequest) {
                   matchedNote.nilaiTambah,
                   matchedNote.nilaiUrutan,
                   matchedNote.nilaiTa1,
-<<<<<<< HEAD
-<<<<<<< HEAD
-                ].filter((v) => v !== null && v !== undefined && String(v) !== "");
-                
-                const sum = scores.reduce((acc: number, v: any) => acc + Number(v), 0);
-=======
                 ].filter((v) => v !== null && v !== undefined && v !== "");
                 
                 const sum = scores.reduce((acc, v) => acc + Number(v), 0);
->>>>>>> d0ef3cf5f532577015a5a1519c7ae678d547fdd6
-=======
-                ].filter((v) => v !== null && v !== undefined && v !== "");
-                
-                const sum = scores.reduce((acc, v) => acc + Number(v), 0);
->>>>>>> d0ef3cf5f532577015a5a1519c7ae678d547fdd6
                 const nilaiTotal = scores.length > 0 ? Math.round((sum / scores.length) * 10) / 10 : null;
 
                 const existingNote = await tx.note.findFirst({
@@ -833,16 +821,9 @@ export async function POST(req: NextRequest) {
     for (const row of rows) {
       try {
         await prisma.$transaction(async (tx) => {
-<<<<<<< HEAD
-<<<<<<< HEAD
           // Cari atau buat user berdasarkan username = NIS lengkap
-          const username = row.nis;
-=======
-=======
->>>>>>> d0ef3cf5f532577015a5a1519c7ae678d547fdd6
-          // Cari atau buat user berdasarkan username = NIS prefix
-          const username = row.nis.split("/")[0]!;
->>>>>>> d0ef3cf5f532577015a5a1519c7ae678d547fdd6
+          const cleanNisStr = String(row.nis).replace(/\s+/g, "").trim();
+          const username = cleanNisStr;
           let user = await tx.user.findUnique({ where: { username } });
 
           if (!user) {
@@ -868,7 +849,7 @@ export async function POST(req: NextRequest) {
 
           // Manual Upsert Student
           let student = await tx.student.findUnique({
-            where: { nis: row.nis },
+            where: { nis: cleanNisStr },
           });
 
           if (student) {
@@ -879,7 +860,7 @@ export async function POST(req: NextRequest) {
           } else {
             student = await tx.student.create({
               data: {
-                nis:     row.nis,
+                nis:     cleanNisStr,
                 nama:    row.nama,
                 kelasId: kelas.id,
                 userId:  user.id,
@@ -929,21 +910,9 @@ export async function POST(req: NextRequest) {
               matchedNote.nilaiTambah,
               matchedNote.nilaiUrutan,
               matchedNote.nilaiTa1,
-<<<<<<< HEAD
-<<<<<<< HEAD
             ].filter((v) => v !== null && v !== undefined && String(v) !== "");
             
             const sum = scores.reduce((acc: number, v: any) => acc + Number(v), 0);
-=======
-            ].filter((v) => v !== null && v !== undefined && v !== "");
-            
-            const sum = scores.reduce((acc, v) => acc + Number(v), 0);
->>>>>>> d0ef3cf5f532577015a5a1519c7ae678d547fdd6
-=======
-            ].filter((v) => v !== null && v !== undefined && v !== "");
-            
-            const sum = scores.reduce((acc, v) => acc + Number(v), 0);
->>>>>>> d0ef3cf5f532577015a5a1519c7ae678d547fdd6
             const nilaiTotal = scores.length > 0 ? Math.round((sum / scores.length) * 10) / 10 : null;
 
             const existingNote = await tx.note.findFirst({
@@ -1019,9 +988,10 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          const vals       = Object.values(row.nilai);
-          const rataRata   = hitungRataRata(vals);
+          const vals = Object.values(row.nilai);
+          const rataRata = hitungRataRata(vals);
 
+          // Re-kalkulasi nilaiHasil dan nilaiRaport dengan TA1
           const avgTugas = rataRata ?? 0;
           const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
           const ta2 = existingGrade?.nilaiTa2 ?? 0;
@@ -1032,22 +1002,22 @@ export async function POST(req: NextRequest) {
 
           const nilaiHasil = listFinal.reduce((a, b) => a + b, 0) / listFinal.length;
           const nilaiRaport = Math.round(nilaiHasil);
-          const predikat   = hitungPredikat(nilaiRaport);
+          const predikat = hitungPredikat(nilaiRaport);
           const totalKosong = vals.filter((v) => v === null).length;
           const statusTuntas = nilaiRaport >= 75 ? "TUNTAS" : "BELUM";
 
           const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
 
           const gradeData = {
-            nilaiGithub:        row.nilai.github,
-            nilaiApi:           row.nilai.api,
-            nilaiAdminPanel:    row.nilai.adminPanel,
-            nilaiLandingPage:   row.nilai.landingPage,
-            nilaiKagglePython:  row.nilai.kagglePython,
-            nilaiKaggleSql:     row.nilai.kaggleSql,
-            nilaiKaggleMl:      row.nilai.kaggleMl,
-            nilaiUjianMl:       row.nilai.ujianMl,
-            nilaiUjianSql:      row.nilai.ujianSql,
+            nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : undefined,
+            nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : undefined,
+            nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : undefined,
+            nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : undefined,
+            nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : undefined,
+            nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : undefined,
+            nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : undefined,
+            nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : undefined,
+            nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : undefined,
             rataRata,
             nilaiTa1: ta1 > 0 ? ta1 : null,
             persentaseHadir: finalPersentaseHadir,
