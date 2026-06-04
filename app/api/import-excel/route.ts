@@ -35,7 +35,7 @@ const NilaiOptional = z
 
 const RowSchema = z.object({
   no:    z.union([z.number(), z.string()]).optional(),
-  nis:   z.string().min(1, "NIS kosong"),
+  nis:   z.string().optional().nullable().transform((v) => v ?? ""),
   nama:  z.string().min(1, "Nama kosong"),
   nilai: z.object({
     github:       NilaiOptional,
@@ -327,7 +327,10 @@ function parseSheet(ws: XLSX.WorkSheet, isRpl: boolean = true): { rows: ParsedRo
   let headerRowIdx = 4;
   for (let i = 0; i < Math.min(10, aoa.length); i++) {
     const row = aoa[i] as any[];
-    if (row && row.some((cell: any) => String(cell).toLowerCase().includes("nis"))) {
+    if (row && row.some((cell: any) => {
+      const lowerCell = String(cell).toLowerCase().trim();
+      return lowerCell.includes("nis") || lowerCell === "nama" || lowerCell === "nama siswa" || lowerCell === "nama lengkap";
+    })) {
       headerRowIdx = i;
       break;
     }
@@ -473,14 +476,29 @@ export async function POST(req: NextRequest) {
         if (!row.nis && !row.nama) {
           continue;
         }
-        // Jika salah satu kosong, lewati juga agar tidak merusak database
-        if (!row.nis || !row.nama) {
+        // Nama wajib ada
+        if (!row.nama) {
           continue;
         }
 
         try {
           await prisma.$transaction(async (tx) => {
-            const cleanNisStr = String(row.nis).replace(/\s+/g, "").trim();
+            let cleanNisStr = row.nis ? String(row.nis).replace(/\s+/g, "").trim() : "";
+
+            // Jika NIS kosong, cari dari database berdasarkan Nama di kelas ini
+            if (!cleanNisStr) {
+              const studentsInClass = await tx.student.findMany({
+                where: { kelasId: classId },
+                select: { nis: true, nama: true }
+              });
+              const matchedStudent = studentsInClass.find(s => matchNames(s.nama, row.nama));
+              if (matchedStudent) {
+                cleanNisStr = matchedStudent.nis;
+              } else {
+                throw new Error(`Siswa "${row.nama}" tidak ditemukan di Kelas ini dan tidak memiliki NIS di file Excel.`);
+              }
+            }
+
             const username = cleanNisStr;
             let user = await tx.user.findUnique({ where: { username } });
 
@@ -512,7 +530,7 @@ export async function POST(req: NextRequest) {
             if (student) {
               student = await tx.student.update({
                 where: { id: student.id },
-                data: { nama: row.nama, kelasId: classId, userId: user.id },
+                data: { kelasId: classId, userId: user.id },
               });
             } else {
               student = await tx.student.create({
@@ -905,8 +923,26 @@ export async function POST(req: NextRequest) {
     for (const row of rows) {
       try {
         await prisma.$transaction(async (tx) => {
-          // Cari atau buat user berdasarkan username = NIS lengkap
-          const cleanNisStr = String(row.nis).replace(/\s+/g, "").trim();
+          let cleanNisStr = row.nis ? String(row.nis).replace(/\s+/g, "").trim() : "";
+
+          // Jika NIS kosong, cari dari database berdasarkan Nama di kelas ini
+          if (!cleanNisStr && row.nama) {
+            const studentsInClass = await tx.student.findMany({
+              where: { kelasId: kelas.id },
+              select: { nis: true, nama: true }
+            });
+            const matchedStudent = studentsInClass.find(s => matchNames(s.nama, row.nama));
+            if (matchedStudent) {
+              cleanNisStr = matchedStudent.nis;
+            } else {
+              throw new Error(`Siswa "${row.nama}" tidak ditemukan di Kelas target dan tidak memiliki NIS di Excel.`);
+            }
+          }
+
+          if (!cleanNisStr) {
+            throw new Error(`NIS kosong untuk siswa ${row.nama || "tidak dikenal"}`);
+          }
+
           const username = cleanNisStr;
           let user = await tx.user.findUnique({ where: { username } });
 
@@ -939,7 +975,7 @@ export async function POST(req: NextRequest) {
           if (student) {
             student = await tx.student.update({
               where: { id: student.id },
-              data: { nama: row.nama, kelasId: kelas.id, userId: user.id },
+              data: { kelasId: kelas.id, userId: user.id },
             });
           } else {
             student = await tx.student.create({

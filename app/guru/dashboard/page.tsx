@@ -193,7 +193,7 @@ export default async function GuruDashboardPage() {
         <p className="text-indigo-300 text-sm font-medium mb-1">{sapa},</p>
         <h1 className="text-2xl font-bold text-white">{namaGuru} 👋</h1>
         <p className="text-slate-400 text-sm mt-2">
-          Semester Genap 2025/2026 · Mengajar {totalSiswa} siswa di {kelas.length} kelas PPLG
+          Semester {SEMESTER} {TAHUN_AJARAN} · Mengajar {totalSiswa} siswa di {kelas.length} kelas PPLG
         </p>
         <div className="mt-3 flex items-center gap-2">
           <div className="flex items-center gap-1.5 bg-indigo-500/15 border border-indigo-500/25 rounded-full px-3 py-1">

@@ -244,11 +244,10 @@ export default function ImportForm() {
     return targetSheets.map((sheet) => {
       if (!sheet.isSelected) return sheet;
 
-      // Filter baris kosong terlebih dahulu (jika NIS atau Nama kosong, abaikan/skip)
+      // Filter baris kosong terlebih dahulu (jika Nama kosong, abaikan/skip)
       const validRows = sheet.rows.filter((row) => {
-        const nisVal = sheet.columnMap.nis ? String(row[sheet.columnMap.nis] || "").trim() : "";
         const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
-        return nisVal !== "" && namaVal !== "";
+        return namaVal !== "";
       });
 
       const errors: string[] = [];
@@ -256,10 +255,7 @@ export default function ImportForm() {
         errors.push("Target kelas belum ditentukan.");
       }
 
-      // Validasi kolom wajib NIS dan Nama
-      if (!sheet.columnMap.nis) {
-        errors.push("Kolom NIS belum dipetakan.");
-      }
+      // Validasi kolom wajib Nama (NIS opsional)
       if (!sheet.columnMap.nama) {
         errors.push("Kolom Nama belum dipetakan.");
       }
@@ -318,7 +314,10 @@ export default function ImportForm() {
           // Cari baris yang mengandung text 'nis' atau 'nama' untuk dijadikan header
           for (let i = 0; i < Math.min(10, aoa.length); i++) {
             const row = aoa[i];
-            if (row && row.some((cell: any) => String(cell).toLowerCase().includes("nis"))) {
+            if (row && row.some((cell: any) => {
+              const lowerCell = String(cell).toLowerCase().trim();
+              return lowerCell.includes("nis") || lowerCell === "nama" || lowerCell === "nama siswa" || lowerCell === "nama lengkap";
+            })) {
               headerRowIdx = i;
               break;
             }
@@ -434,8 +433,12 @@ export default function ImportForm() {
         });
 
         return {
-          nis: String(row[sheet.columnMap.nis || ""]).replace(/\s+/g, "").trim(),
-          nama: String(row[sheet.columnMap.nama || ""]).trim(),
+          nis: sheet.columnMap.nis && row[sheet.columnMap.nis] !== undefined && row[sheet.columnMap.nis] !== null
+            ? String(row[sheet.columnMap.nis]).replace(/\s+/g, "").trim()
+            : "",
+          nama: sheet.columnMap.nama && row[sheet.columnMap.nama] !== undefined && row[sheet.columnMap.nama] !== null
+            ? String(row[sheet.columnMap.nama]).trim()
+            : "",
           nilai,
         };
       });
