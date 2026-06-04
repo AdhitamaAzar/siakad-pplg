@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth }       from "@/lib/auth";
 import LoginForm      from "./LoginForm";
+import prisma         from "@/lib/prisma";
 
 export const metadata: Metadata = {
   title: "Login — SIAKAD PPLG",
@@ -33,6 +34,10 @@ export default async function LoginPage() {
     };
     redirect(roleMap[session.user.role] ?? "/");
   }
+
+  // Fetch teachers for helper footer
+  const teachers = await prisma.teacher.findMany({ select: { nama: true } });
+  const teacherNames = teachers.map((t) => t.nama).join(", ") || "Fandik Ariyanto, S.ST";
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#080c14]">
@@ -145,7 +150,7 @@ export default async function LoginPage() {
               SMK Pengembangan Perangkat Lunak dan Gim
             </p>
             <p className="text-xs text-slate-700">
-              Guru: Fandik Ariyanto, S.ST
+              Guru: {teacherNames}
             </p>
           </div>
         </div>

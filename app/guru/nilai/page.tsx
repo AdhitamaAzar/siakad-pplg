@@ -11,10 +11,9 @@ import NilaiClientPage from "./NilaiClientPage";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Rekap Nilai — Guru" };
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
-const TAHUN_AJARAN = "2025/2026";
-const SEMESTER     = "Genap";
+export const metadata: Metadata = { title: "Rekap Nilai — Guru" };
 
 interface PageProps {
   searchParams: Promise<{ kelas?: string; mapel?: string }>;
@@ -26,6 +25,7 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
     redirect("/login");
   }
 
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const sp = await searchParams;
 
   const kelasList = await prisma.class.findMany({
@@ -38,7 +38,29 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
 
   const subjectsList = await prisma.subject.findMany({
     orderBy: { namaMapel: "asc" },
-    select: { id: true, namaMapel: true, kodeMapel: true },
+    select: {
+      id: true,
+      namaMapel: true,
+      kodeMapel: true,
+      weightGithub: true,
+      weightApi: true,
+      weightAdminPanel: true,
+      weightLandingPage: true,
+      weightKagglePython: true,
+      weightKaggleSql: true,
+      weightKaggleMl: true,
+      weightUjianMl: true,
+      weightUjianSql: true,
+      activeGithub: true,
+      activeApi: true,
+      activeAdminPanel: true,
+      activeLandingPage: true,
+      activeKagglePython: true,
+      activeKaggleSql: true,
+      activeKaggleMl: true,
+      activeUjianMl: true,
+      activeUjianSql: true,
+    },
   });
 
   const activeSubjectId = sp.mapel ? Number(sp.mapel) : subjectsList[0]?.id;

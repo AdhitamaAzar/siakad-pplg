@@ -13,10 +13,9 @@ import prisma from "@/lib/prisma";
 import Link from "next/link";
 import { FileText, Printer, TrendingUp, TrendingDown, BarChart3, CheckCircle2 } from "lucide-react";
 
-export const metadata: Metadata = { title: "Rekap Nilai — Laporan" };
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
-const TAHUN_AJARAN = "2025/2026";
-const SEMESTER     = "Genap";
+export const metadata: Metadata = { title: "Rekap Nilai — Laporan" };
 
 const KOMPONEN = [
   { key: "nilaiGithub"       as const, label: "Github" },
@@ -80,6 +79,7 @@ interface PageProps {
 
 export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) {
   const sp = await searchParams;
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
   const kelasList = await prisma.class.findMany({
     where: { tahunAjaran: TAHUN_AJARAN },

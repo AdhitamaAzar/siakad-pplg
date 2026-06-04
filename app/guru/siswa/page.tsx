@@ -12,10 +12,9 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Daftar Siswa — Guru" };
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
-const TAHUN_AJARAN = "2025/2026";
-const SEMESTER     = "Genap";
+export const metadata: Metadata = { title: "Daftar Siswa — Guru" };
 
 interface PageProps {
   searchParams: Promise<{ kelas?: string }>;
@@ -41,6 +40,7 @@ export default async function GuruSiswaPage({ searchParams }: PageProps) {
     redirect("/login");
   }
 
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const sp = await searchParams;
 
   const teacherRecord = await prisma.teacher.findUnique({
@@ -145,10 +145,10 @@ export default async function GuruSiswaPage({ searchParams }: PageProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-800/60">
-              {["#", "Rank", "Nama Siswa", "NIS", "Nilai Raport", "Predikat", "Status"].map((h) => (
+              {["#", "Rank", "Nama Siswa", "NIS", "Nilai Raport", "Predikat", "Status", "Aksi"].map((h) => (
                 <th
                   key={h}
-                  className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500"
+                  className={`px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 ${h === "Aksi" ? "text-center" : ""}`}
                 >
                   {h}
                 </th>
@@ -190,6 +190,19 @@ export default async function GuruSiswaPage({ searchParams }: PageProps) {
                   ) : (
                     <span className="text-slate-700 text-xs">Belum dinilai</span>
                   )}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <Link
+                    href={`/guru/laporan/raport?siswa=${s.id}`}
+                    className="
+                      inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                      text-indigo-400 bg-indigo-500/10 border border-indigo-500/20
+                      hover:bg-indigo-500/20 hover:text-indigo-300 hover:border-indigo-500/40
+                      transition-all
+                    "
+                  >
+                    Cetak Raport
+                  </Link>
                 </td>
               </tr>
             ))}

@@ -27,6 +27,8 @@ interface DashboardShellProps {
   role: string;
   /** Daftar kelas aktif untuk menu */
   classes?: { id: number; namaKelas: string }[];
+  tahunAjaran?: string;
+  semester?: string;
 }
 
 // ─── DASHBOARD SHELL ──────────────────────────────────────────────────────────
@@ -55,6 +57,8 @@ export default function DashboardShell({
   username,
   role,
   classes,
+  tahunAjaran,
+  semester,
 }: DashboardShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -76,7 +80,12 @@ export default function DashboardShell({
       {/* ── Main area (Topbar + content) ────────────────────────────── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         {/* Topbar */}
-        <Topbar onMenuClick={openMobile} userName={userName} />
+        <Topbar
+          onMenuClick={openMobile}
+          userName={userName}
+          tahunAjaran={tahunAjaran}
+          semester={semester}
+        />
 
         {/* Page content */}
         <main

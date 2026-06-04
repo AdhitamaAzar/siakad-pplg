@@ -133,8 +133,7 @@ model Student {
 // NILAI (GRADE) MODEL
 // =============================================================================
 
-/// Model Grade: Nilai akademik siswa per semester
-/// Terdiri dari 9 komponen nilai tugas + nilai kalkulasi akhir
+/// Model Grade: Nilai akademik siswa per semester (dinamis via GradeDetail)
 model Grade {
   id          Int     @id @default(autoincrement())
   studentId   Int
@@ -147,46 +146,30 @@ model Grade {
   /// Tahun ajaran (contoh: "2025/2026")
   tahunAjaran String
 
-  // ─── 9 KOMPONEN NILAI TUGAS ───────────────────────────────────────────────
-  /// Kolom D: Portfolio / Link Github (0-100, NULL jika tidak dikerjakan)
-  nilaiGithub       Float?
-  /// Kolom E: Tugas API (0-100, NULL jika tidak dikerjakan)
-  nilaiApi          Float?
-  /// Kolom F: Admin Panel (0-100, NULL jika tidak dikerjakan)
-  nilaiAdminPanel   Float?
-  /// Kolom G: Link Landing Page (0-100, NULL jika tidak dikerjakan)
-  nilaiLandingPage  Float?
-  /// Kolom H: Kaggle Python (0-100, NULL jika tidak dikerjakan)
-  nilaiKagglePython Float?
-  /// Kolom I: Kaggle Intro to SQL (0-100, NULL jika tidak dikerjakan)
-  nilaiKaggleSql    Float?
-  /// Kolom J: Kaggle Machine Learning (0-100, NULL jika tidak dikerjakan)
-  nilaiKaggleMl     Float?
-  /// Kolom K: Ujian Online Machine Learning (0-100, NULL jika tidak dikerjakan)
-  nilaiUjianMl      Float?
-  /// Kolom L: Ujian Online SQL (0-100, NULL jika tidak dikerjakan)
-  nilaiUjianSql     Float?
+  // ─── DETAIL NILAI (DINAMIS) ───────────────────────────────────────────────
+  /// Nilai per tugas disimpan di tabel GradeDetail (relasi ke Task)
+  details GradeDetail[]
 
   // ─── HASIL KALKULASI ─────────────────────────────────────────────────────
-  /// Kolom M: Jumlah nilai kosong (dihitung otomatis)
+  /// Jumlah tugas aktif yang belum diisi nilainya
   jumlahNilaiKosong Int?
-  /// Kolom N: Persentase nilai yang sudah diisi (dihitung otomatis)
+  /// Persentase tugas aktif yang sudah diisi nilainya
   persentaseMaju    Float?
-  /// Kolom O: Persentase kehadiran
+  /// Persentase kehadiran
   persentaseHadir   Float?
-  /// Kolom P: Rata-rata nilai tugas (dari 9 komponen)
+  /// Rata-rata nilai tugas (weighted average dari tugas aktif)
   rataRata          Float?
-  /// Kolom Q-T: Nilai Tugas Tambahan (TA1 dan TA2, opsional)
+  /// Nilai Tugas Tambahan (TA1 dan TA2, opsional)
   nilaiTa1          Float?
   nilaiTa2          Float?
-  /// Kolom U: Nilai Hasil (nilai akhir sebelum raport)
+  /// Nilai Hasil (nilai akhir sebelum raport)
   nilaiHasil        Float?
-  /// Kolom V: Nilai Raport (nilai final yang dilaporkan)
+  /// Nilai Raport (nilai final yang dilaporkan)
   nilaiRaport       Float?
   /// Predikat berdasarkan nilai raport
   /// "Sangat Baik" (90-100), "Baik" (75-89), "Cukup" (60-74), "Perlu Bimbingan" (<60)
   predikat          String?
-  /// Kolom W: Status ketuntasan belajar
+  /// Status ketuntasan belajar
   /// "TUNTAS" | "BELUM" | "TUNTAS DENGAN CATATAN"
   statusTuntas      String?
 
@@ -352,10 +335,49 @@ model Subject {
   /// Tingkat kelas mata pelajaran (contoh: 11)
   tingkat   Int
 
+  /// Komponen penilaian (tugas, ujian, dll.) — dinamis per mapel
+  tasks                Task[]
   teacherClassSubjects TeacherClassSubject[]
   grades               Grade[]
 
   @@map("subjects")
+}
+
+/// Model Task: Komponen penilaian per mata pelajaran
+/// Contoh: "Github", "API", "Ujian ML", "Tugas 1", dll.
+/// Setiap mapel bisa punya jumlah dan nama tugas yang berbeda.
+model Task {
+  id        Int      @id @default(autoincrement())
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  /// Nama komponen (contoh: "Github", "Ujian SQL", "Tugas 1")
+  nama      String
+  /// Persentase bobot penilaian (0-100)
+  bobot     Float    @default(10)
+  /// Apakah komponen ini aktif semester ini
+  isActive  Boolean  @default(true)
+  /// Urutan tampil di tabel (ascending)
+  urutan    Int      @default(0)
+
+  gradeDetails GradeDetail[]
+
+  @@unique([subjectId, nama])
+  @@map("tasks")
+}
+
+/// Model GradeDetail: Nilai siswa per komponen tugas
+/// Menggantikan 9 kolom hardcoded (nilaiGithub, nilaiApi, dll.)
+model GradeDetail {
+  id      Int    @id @default(autoincrement())
+  gradeId Int
+  grade   Grade  @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  taskId  Int
+  task    Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// Nilai komponen (0-100, NULL jika belum diisi)
+  nilai   Float?
+
+  @@unique([gradeId, taskId])
+  @@map("grade_details")
 }
 
 /// Model TeacherClassSubject: Menghubungkan Guru dengan Kelas dan Mapel yang diajar

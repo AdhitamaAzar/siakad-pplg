@@ -9,16 +9,16 @@ import type { Metadata } from "next";
 import prisma from "@/lib/prisma";
 import CatatanClientPage from "./CatatanClientPage";
 
-export const metadata: Metadata = { title: "Catatan Guru — Panel Guru" };
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
-const TAHUN_AJARAN = "2025/2026";
-const SEMESTER     = "Genap";
+export const metadata: Metadata = { title: "Catatan Guru — Panel Guru" };
 
 interface PageProps {
   searchParams: Promise<{ kelas?: string }>;
 }
 
 export default async function CatatanGuruPage({ searchParams }: PageProps) {
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const sp = await searchParams;
 
   // Ambil daftar kelas aktif

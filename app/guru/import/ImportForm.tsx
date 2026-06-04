@@ -130,26 +130,18 @@ function parseCatatanSheet(ws: XLSX.WorkSheet) {
       const nilaiTa1 = row[8] !== "" ? Number(row[8]) : null;
       const catatanText = row[11] !== "" ? String(row[11]).trim() : "";
 
-      let className = "";
-      if (i >= 1 && i <= 26) className = "XI PPLG 3";
-      else if (i >= 28 && i <= 53) className = "XI PPLG 2";
-      else if (i >= 56 && i <= 79) className = "XI PPLG 1";
-
-      if (className) {
-        results.push({
-          nama: name,
-          className,
-          judulProyek,
-          nilaiItem,
-          nilaiData,
-          nilaiAlur,
-          nilaiMetode,
-          nilaiTambah,
-          nilaiUrutan,
-          nilaiTa1,
-          catatan: catatanText || "Proyek Mandiri"
-        });
-      }
+      results.push({
+        nama: name,
+        judulProyek,
+        nilaiItem,
+        nilaiData,
+        nilaiAlur,
+        nilaiMetode,
+        nilaiTambah,
+        nilaiUrutan,
+        nilaiTa1,
+        catatan: catatanText || "Proyek Mandiri"
+      });
     }
   }
   return results;
@@ -307,8 +299,11 @@ export default function ImportForm() {
       workbookRef.current = workbook;
 
       const gradeSheets = workbook.SheetNames.filter((name) => {
-        const lower = name.toLowerCase().replace(/\s+/g, "");
-        return lower === "xipplg1" || lower === "xipplg2" || lower === "xipplg3";
+        const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (cleanName === "catatan" || cleanName.startsWith("ab") || cleanName.startsWith("l")) {
+          return false;
+        }
+        return true;
       });
       
       const parsedSheets: ExcelSheetData[] = gradeSheets.map((sheetName) => {
@@ -452,33 +447,30 @@ export default function ImportForm() {
       let filteredCatatanRows: any[] = [];
 
       if (workbook) {
+        const cleanSheetName = sheet.sheetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+
         const attSheetName = workbook.SheetNames.find(name => {
-          const clean = name.toLowerCase().replace(/\s+/g, "");
-          return clean === "ab" + sheet.sheetName.toLowerCase().replace(/\s+/g, "");
+          const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+          return clean === "ab" + cleanSheetName || clean.includes("ab" + cleanSheetName);
         });
         if (attSheetName) {
           attendanceRows = parseAttendanceSheet(workbook.Sheets[attSheetName]);
         }
 
         const repSheetName = workbook.SheetNames.find(name => {
-          const clean = name.toLowerCase().replace(/\s+/g, "");
-          return clean === "l" + sheet.sheetName.toLowerCase().replace(/\s+/g, "");
+          const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+          return clean === "l" + cleanSheetName || clean.includes("l" + cleanSheetName);
         });
         if (repSheetName) {
           laporanRows = parseLaporanSheet(workbook.Sheets[repSheetName]);
         }
 
         const catSheetName = workbook.SheetNames.find(name => {
-          const clean = name.toLowerCase().replace(/\s+/g, "");
+          const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "");
           return clean === "catatan";
         });
         if (catSheetName) {
-          const targetClass = classes.find(c => String(c.id) === String(sheet.targetClassId));
-          const className = targetClass ? targetClass.namaKelas : "";
-          const parsedCatatan = parseCatatanSheet(workbook.Sheets[catSheetName]);
-          filteredCatatanRows = parsedCatatan.filter(r => 
-            r.className.toLowerCase().replace(/\s+/g, "") === className.toLowerCase().replace(/\s+/g, "")
-          );
+          filteredCatatanRows = parseCatatanSheet(workbook.Sheets[catSheetName]);
         }
       }
 
@@ -664,6 +656,42 @@ export default function ImportForm() {
                 })}
               </div>
             </div>
+
+            {/* Target Class Selector for Active Sheet */}
+            {sheets[currentSheetIdx] && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-800/80 bg-slate-950/30">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-slate-400">Target Kelas untuk Sheet <span className="text-indigo-400 font-bold">"{sheets[currentSheetIdx].sheetName}"</span>:</span>
+                  <select
+                    value={sheets[currentSheetIdx].targetClassId}
+                    onChange={(e) => {
+                      const updated = [...sheets];
+                      updated[currentSheetIdx]!.targetClassId = e.target.value;
+                      const validated = validateSheets(updated);
+                      setSheets(validated);
+                    }}
+                    className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors"
+                  >
+                    <option value="">-- Pilih Kelas --</option>
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.namaKelas}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {sheets[currentSheetIdx].targetClassId ? (
+                  <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full font-extrabold uppercase tracking-wider self-start sm:self-auto">
+                    Terhubung
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full font-extrabold uppercase tracking-wider flex items-center gap-1 self-start sm:self-auto">
+                    <AlertCircle size={10} />
+                    Kelas Belum Dipilih
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Error panel jika ada error validasi */}
             {sheets[currentSheetIdx]?.validationErrors && sheets[currentSheetIdx]!.validationErrors.length > 0 && (

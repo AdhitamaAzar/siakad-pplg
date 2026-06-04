@@ -11,8 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 
-const SEMESTER = "Genap";
-const TAHUN_AJARAN = "2025/2026";
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 // Helper untuk menghitung nilai total rata-rata dari komponen yang diisi
 function hitungTotalSkor(body: any): number | null {
@@ -34,6 +33,8 @@ function hitungTotalSkor(body: any): number | null {
 // Sync nilai TA1 ke tabel Grade agar terhitung di nilai raport
 async function syncGradeTa1(studentId: number, nilaiTa1: number | null) {
   if (nilaiTa1 === null) return;
+
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
   const grade = await prisma.grade.findFirst({
     where: { studentId, semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
@@ -242,6 +243,8 @@ export async function DELETE(req: NextRequest) {
   if (!id) {
     return NextResponse.json({ error: "ID wajib diisi." }, { status: 400 });
   }
+
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
   try {
     const note = await prisma.note.delete({

@@ -20,6 +20,7 @@ export default async function PenggunaPage() {
     include: {
       role: true,
       student: { select: { nama: true } },
+      teacher: { select: { nama: true } },
     },
     orderBy: { createdAt: 'desc' },
   });

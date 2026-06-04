@@ -20,12 +20,12 @@ import {
   Award,
 } from 'lucide-react';
 
+import { getActiveAcademicConfig } from '@/lib/academicConfig';
+
 export const metadata: Metadata = {
   title: 'Laporan Akademik — SIAKAD PPLG',
 };
 
-const SEMESTER     = 'Genap';
-const TAHUN_AJARAN = '2025/2026';
 const PASSING_SCORE = 75; // KKM
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -101,6 +101,7 @@ function NilaiRataRata({ nilai }: { nilai: number | null }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default async function LaporanPage() {
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const classes = await prisma.class.findMany({
     where: { tahunAjaran: TAHUN_AJARAN },
     include: {

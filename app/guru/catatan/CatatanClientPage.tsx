@@ -76,6 +76,7 @@ export default function CatatanClientPage({
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   
   const [judulProyek, setJudulProyek] = useState("");
+  const [catCategory, setCatCategory] = useState("Akademik");
   const [catatan, setCatatan] = useState("");
   
   // Toggle Kriteria RPL
@@ -93,12 +94,31 @@ export default function CatatanClientPage({
   // Universal Score (for non-RPL)
   const [nilaiTotalInput, setNilaiTotalInput] = useState("");
 
+  // Category Filter State
+  const [filterCategory, setFilterCategory] = useState("All");
+
+  const getNoteCategory = (note: Note) => {
+    const title = note.judulProyek || "";
+    if (title.startsWith("[AKADEMIK]")) return "Akademik";
+    if (title.startsWith("[PERILAKU]")) return "Perilaku";
+    if (title.startsWith("[WALI KELAS]")) return "Wali Kelas";
+    return "Akademik";
+  };
+
+  const getCleanTitle = (note: Note) => {
+    const title = note.judulProyek || "";
+    return title
+      .replace(/^\[(AKADEMIK|PERILAKU|WALI KELAS)\]/, "")
+      .trim() || "Evaluasi Belajar";
+  };
+
   // ── Form Actions ─────────────────────────────────────────────────────────
 
   function openAddModal(student: Student) {
     setSelectedStudent(student);
     setEditingNote(null);
     setJudulProyek("Kegiatan / Evaluasi Mandiri");
+    setCatCategory("Akademik");
     setCatatan("");
     
     // Default non-RPL criteria (universal)
@@ -120,7 +140,23 @@ export default function CatatanClientPage({
   function openEditModal(student: Student, note: Note) {
     setSelectedStudent(student);
     setEditingNote(note);
-    setJudulProyek(note.judulProyek || "");
+    
+    let title = note.judulProyek || "";
+    let parsedCat = "Akademik";
+    
+    if (title.startsWith("[AKADEMIK]")) {
+      parsedCat = "Akademik";
+      title = title.replace("[AKADEMIK]", "").trim();
+    } else if (title.startsWith("[PERILAKU]")) {
+      parsedCat = "Perilaku";
+      title = title.replace("[PERILAKU]", "").trim();
+    } else if (title.startsWith("[WALI KELAS]")) {
+      parsedCat = "Wali Kelas";
+      title = title.replace("[WALI KELAS]", "").trim();
+    }
+    
+    setJudulProyek(title);
+    setCatCategory(parsedCat);
     setCatatan(note.catatan);
 
     const hasComponents = 
@@ -157,10 +193,13 @@ export default function CatatanClientPage({
     setIsSubmitting(true);
     setErrorMsg("");
 
+    const prefix = `[${catCategory.toUpperCase()}]`;
+    const finalJudul = `${prefix} ${judulProyek.trim() || "Kegiatan / Evaluasi Mandiri"}`;
+
     const payload = {
       id: editingNote?.id,
       studentId: selectedStudent?.id,
-      judulProyek,
+      judulProyek: finalJudul,
       catatan,
       // Jika kriteria RPL diaktifkan, kirim nilai komponen
       nilaiItem: showRplCriteria && nilaiItem !== "" ? Number(nilaiItem) : null,
@@ -256,11 +295,38 @@ export default function CatatanClientPage({
         ))}
       </div>
 
+      {/* ── FILTER KATEGORI ── */}
+      <div className="flex items-center gap-2.5 p-4 rounded-2xl border border-slate-800/60 bg-slate-900/40">
+        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Kategori Catatan:</span>
+        <div className="flex gap-1.5 flex-wrap">
+          {["All", "Akademik", "Perilaku", "Wali Kelas"].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setFilterCategory(cat)}
+              className={`
+                px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer
+                ${filterCategory === cat
+                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                  : "bg-slate-900/60 text-slate-500 border-slate-800/60 hover:text-slate-300"}
+              `}
+            >
+              {cat === "All" ? "Semua Kategori" : cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── LIST SISWA ────────────────────────────────────────────────────── */}
       <div className="space-y-3">
         {students.map((student) => {
           const isExpanded = expandedStudentId === student.id;
-          const hasNotes = student.notes.length > 0;
+          
+          // Filter notes based on selected category
+          const studentNotes = student.notes.filter((note) => {
+            if (filterCategory === "All") return true;
+            return getNoteCategory(note) === filterCategory;
+          });
+          const hasNotes = studentNotes.length > 0;
 
           return (
             <div
@@ -276,7 +342,7 @@ export default function CatatanClientPage({
                 className="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.01]"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/20 shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-bold border border-indigo-550/20 shrink-0">
                     {student.nama.charAt(0)}
                   </div>
                   <div>
@@ -289,9 +355,13 @@ export default function CatatanClientPage({
 
                 <div className="flex items-center gap-3">
                   {/* Badge Jumlah Catatan */}
-                  {hasNotes ? (
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      {student.notes.length} catatan
+                  {student.notes.length > 0 ? (
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
+                      hasNotes 
+                        ? "bg-emerald-500/10 text-emerald-450 border-emerald-500/20" 
+                        : "bg-slate-500/5 text-slate-500 border-slate-800/40"
+                    }`}>
+                      {studentNotes.length} catatan
                     </span>
                   ) : (
                     <span className="text-xs text-slate-600">Belum ada catatan</span>
@@ -317,11 +387,15 @@ export default function CatatanClientPage({
 
                   {!hasNotes ? (
                     <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center bg-slate-900/10">
-                      <p className="text-xs text-slate-500">Siswa ini belum memiliki catatan evaluasi.</p>
+                      <p className="text-xs text-slate-500">
+                        {student.notes.length > 0 
+                          ? `Siswa ini memiliki catatan di kategori lain, tetapi belum memiliki catatan di kategori "${filterCategory}".`
+                          : "Siswa ini belum memiliki catatan evaluasi."}
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {student.notes.map((note) => {
+                      {studentNotes.map((note) => {
                         const hasComponents = 
                           note.nilaiItem !== null || 
                           note.nilaiData !== null || 
@@ -331,13 +405,24 @@ export default function CatatanClientPage({
                           note.nilaiUrutan !== null || 
                           note.nilaiTa1 !== null;
 
+                        const cat = getNoteCategory(note);
+
                         return (
                           <div key={note.id} className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-4 space-y-3 relative">
                             {/* Judul & Aksi */}
                             <div className="flex justify-between items-start gap-4">
                               <div>
-                                <h4 className="text-sm font-bold text-white">{note.judulProyek || "Evaluasi Belajar"}</h4>
-                                <p className="text-[10px] text-slate-500 mt-0.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md uppercase border tracking-wider ${
+                                    cat === "Akademik" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" :
+                                    cat === "Perilaku" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                    "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                                  }`}>
+                                    {cat}
+                                  </span>
+                                  <h4 className="text-sm font-bold text-white">{getCleanTitle(note)}</h4>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-1">
                                   Oleh: <span className="text-slate-400 font-semibold">{note.teacher.nama}</span> · {new Date(note.createdAt).toLocaleDateString("id-ID", { dateStyle: "medium" })}
                                 </p>
                               </div>
@@ -384,7 +469,7 @@ export default function CatatanClientPage({
                                   </div>
                                 ))}
                                 {/* Total */}
-                                <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-center">
+                                <div className="rounded-lg bg-indigo-500/10 border border-indigo-550/20 p-2 text-center">
                                   <p className="text-[9px] uppercase tracking-wider text-indigo-400 font-bold">Total</p>
                                   <p className="text-xs font-black mt-0.5 text-indigo-300">
                                     {note.nilaiTotal ?? "—"}
@@ -445,6 +530,20 @@ export default function CatatanClientPage({
 
             {/* Inputs */}
             <div className="space-y-4">
+              {/* Kategori Catatan */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-400">Kategori Catatan</label>
+                <select
+                  value={catCategory}
+                  onChange={(e) => setCatCategory(e.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500/50 cursor-pointer"
+                >
+                  <option value="Akademik">Akademik</option>
+                  <option value="Perilaku">Perilaku</option>
+                  <option value="Wali Kelas">Wali Kelas</option>
+                </select>
+              </div>
+
               {/* Judul Catatan / Kegiatan */}
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-400">Judul Catatan / Kegiatan</label>

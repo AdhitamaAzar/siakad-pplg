@@ -5,10 +5,14 @@
 
 import type { Metadata } from "next";
 import { Settings, Database, Shield, Info } from "lucide-react";
+import prisma from "@/lib/prisma";
 
 export const metadata: Metadata = { title: "Pengaturan Sistem — Admin" };
 
-export default function AdminPengaturanPage() {
+export default async function AdminPengaturanPage() {
+  const teachers = await prisma.teacher.findMany({ select: { nama: true } });
+  const teacherListString = teachers.map((t) => t.nama).join(", ") || "Belum ada guru terdaftar";
+
   return (
     <div className="space-y-6 max-w-[800px]">
       <div className="flex items-center gap-3">
@@ -27,7 +31,7 @@ export default function AdminPengaturanPage() {
           { label: "Versi",           value: "1.0.0" },
           { label: "Tahun Ajaran",    value: "2025/2026" },
           { label: "Semester Aktif",  value: "Genap" },
-          { label: "Guru Pengampu",   value: "Fandik Ariyanto, S.ST" },
+          { label: "Guru Pengampu",   value: teacherListString },
           { label: "Jurusan",         value: "Pengembangan Perangkat Lunak dan Gim (PPLG)" },
           { label: "Framework",       value: "Next.js 15.3.9 + Prisma v7 + PostgreSQL" },
         ].map(({ label, value }) => (

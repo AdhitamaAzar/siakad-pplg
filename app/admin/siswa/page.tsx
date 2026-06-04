@@ -11,15 +11,15 @@ import prisma from '@/lib/prisma';
 import { GraduationCap, Users, Award, Star } from 'lucide-react';
 import SiswaClientPage from './SiswaClientPage';
 
+import { getActiveAcademicConfig } from '@/lib/academicConfig';
+
 export const metadata: Metadata = {
   title: 'Data Siswa — SIAKAD PPLG',
 };
 
-const SEMESTER      = 'Genap';
-const TAHUN_AJARAN  = '2025/2026';
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default async function SiswaPage() {
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const students = await prisma.student.findMany({
     include: {
       kelas: true,

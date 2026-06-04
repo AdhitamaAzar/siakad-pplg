@@ -10,14 +10,15 @@ import { redirect }      from "next/navigation";
 import prisma            from "@/lib/prisma";
 import { FileText, CheckCircle2, XCircle, CalendarCheck, CheckSquare } from "lucide-react";
 
-export const metadata: Metadata = { title: "Laporan Akhir — Portal Siswa" };
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
-const SEMESTER     = "Genap";
-const TAHUN_AJARAN = "2025/2026";
+export const metadata: Metadata = { title: "Laporan Akhir — Portal Siswa" };
 
 export default async function SiswaLaporanPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
   const student = await prisma.student.findUnique({
     where:   { userId: Number(session.user.id) },

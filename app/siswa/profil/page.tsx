@@ -8,12 +8,15 @@ import { auth }          from "@/lib/auth";
 import { redirect }      from "next/navigation";
 import prisma            from "@/lib/prisma";
 import { UserCircle, Key, BookOpen, School } from "lucide-react";
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata: Metadata = { title: "Profil Saya — Siswa" };
 
 export default async function SiswaProfilPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const { tahunAjaran, semester } = await getActiveAcademicConfig();
 
   const student = await prisma.student.findUnique({
     where:   { userId: Number(session.user.id) },
@@ -50,8 +53,8 @@ export default async function SiswaProfilPage() {
           { icon: Key,      label: "Username",    value: session.user.username ?? session.user.nama ?? "—" },
           { icon: BookOpen, label: "NIS",         value: student?.nis ?? "—" },
           { icon: School,   label: "Kelas",       value: student?.kelas?.namaKelas ?? "—" },
-          { icon: BookOpen, label: "Tahun Ajaran", value: "2025/2026" },
-          { icon: BookOpen, label: "Semester",    value: "Genap" },
+          { icon: BookOpen, label: "Tahun Ajaran", value: tahunAjaran },
+          { icon: BookOpen, label: "Semester",    value: semester },
         ].map(({ icon: Icon, label, value }) => (
           <div key={label} className="px-5 py-3.5 flex items-center gap-3">
             <Icon size={14} className="text-slate-600 shrink-0" />

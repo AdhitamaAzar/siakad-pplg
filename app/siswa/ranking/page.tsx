@@ -12,10 +12,9 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { Trophy, Medal, Star, Users } from "lucide-react";
 
-export const metadata: Metadata = { title: "Ranking Kelas" };
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
-const SEMESTER     = "Genap";
-const TAHUN_AJARAN = "2025/2026";
+export const metadata: Metadata = { title: "Ranking Kelas" };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -68,6 +67,8 @@ function RankBadge({ rank }: { rank: number }) {
 export default async function SiswaRankingPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
   // Ambil data siswa yang login beserta kelas
   const currentStudent = await prisma.student.findUnique({

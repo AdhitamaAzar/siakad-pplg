@@ -6,6 +6,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import DashboardShell from "@/components/sidebar/DashboardShell";
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata = {
   title: {
@@ -30,11 +31,15 @@ export default async function SiswaLayout({
     redirect(`/${session.user.role}/dashboard`);
   }
 
+  const { tahunAjaran, semester } = await getActiveAcademicConfig();
+
   return (
     <DashboardShell
       userName={session.user.nama}
       username={session.user.username}
       role="siswa"
+      tahunAjaran={tahunAjaran}
+      semester={semester}
     >
       {children}
     </DashboardShell>

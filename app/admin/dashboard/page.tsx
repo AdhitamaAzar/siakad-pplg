@@ -13,6 +13,7 @@ import { Users, School, RefreshCw, GraduationCap, BookOpen } from "lucide-react"
 import { getAdminDashboardData } from "@/lib/queries/dashboard";
 import StatCard from "@/components/dashboard/StatCard";
 import AdminDashboardTabs from "@/components/dashboard/AdminDashboardTabs";
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata: Metadata = {
   title: "Dashboard Admin",
@@ -26,6 +27,7 @@ export const revalidate = 300;
 export default async function AdminDashboardPage() {
   // Fetch semua data dashboard dalam satu panggilan (paralel query di dalam)
   const data = await getAdminDashboardData();
+  const { tahunAjaran, semester } = await getActiveAcademicConfig();
 
   // Format waktu terakhir update
   const lastUpdatedStr = data.lastUpdated.toLocaleString("id-ID", {
@@ -43,7 +45,7 @@ export default async function AdminDashboardPage() {
             Dashboard Administrator
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Rekap akademik SMK PPLG — Semester Genap 2025/2026
+            Rekap akademik SMK PPLG — Semester {semester} {tahunAjaran}
           </p>
         </div>
         {/* Last updated indicator */}

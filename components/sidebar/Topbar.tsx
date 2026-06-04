@@ -21,6 +21,8 @@ interface TopbarProps {
   onMenuClick: () => void;
   /** Nama pengguna untuk greeting */
   userName: string;
+  tahunAjaran?: string;
+  semester?: string;
 }
 
 // ─── BREADCRUMB HELPER ────────────────────────────────────────────────────────
@@ -124,7 +126,12 @@ function RealtimeClock() {
  * @param onMenuClick - Callback untuk toggle mobile drawer
  * @param userName - Nama pengguna untuk greeting
  */
-export default function Topbar({ onMenuClick, userName }: TopbarProps) {
+export default function Topbar({
+  onMenuClick,
+  userName,
+  tahunAjaran = "2025/2026",
+  semester = "Genap",
+}: TopbarProps) {
   const pathname = usePathname();
   const pageLabel = getPageLabel(pathname);
   const greeting = getGreeting();
@@ -210,7 +217,7 @@ export default function Topbar({ onMenuClick, userName }: TopbarProps) {
           "
         >
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-          Genap 2025/2026
+          {semester} {tahunAjaran}
         </div>
       </div>
     </header>

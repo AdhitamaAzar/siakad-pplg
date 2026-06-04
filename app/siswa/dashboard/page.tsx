@@ -14,15 +14,16 @@ import { CalendarCheck, Star, MessageSquare, User, MapPin, Phone, Calendar, Hear
 import prisma from "@/lib/prisma";
 import Link from "next/link";
 
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
+
 export const metadata: Metadata = { title: "Dashboard Siswa — SIAKAD PPLG" };
 export const revalidate = 0; // Disable caching to reflect updates instantly
-
-const SEMESTER     = "Genap";
-const TAHUN_AJARAN = "2025/2026";
 
 export default async function SiswaDashboardPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
   // Cari data siswa berdasarkan userId dari session
   const student = await prisma.student.findUnique({

@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import DashboardShell from "@/components/sidebar/DashboardShell";
 import prisma from "@/lib/prisma";
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata = {
   title: {
@@ -38,6 +39,8 @@ export default async function GuruLayout({
     redirect(`/${session.user.role}/dashboard`);
   }
 
+  const { tahunAjaran, semester } = await getActiveAcademicConfig();
+
   // Ambil data kelas yang diajar oleh guru ini
   const teacherRecord = await prisma.teacher.findUnique({
     where: { userId: Number(session.user.id) },
@@ -45,7 +48,7 @@ export default async function GuruLayout({
 
   const classes = await prisma.class.findMany({
     where: {
-      tahunAjaran: "2025/2026",
+      tahunAjaran: tahunAjaran,
       classSubjects: {
         some: {
           teacherId: teacherRecord?.id,
@@ -62,6 +65,8 @@ export default async function GuruLayout({
       username={session.user.username}
       role="guru"
       classes={classes}
+      tahunAjaran={tahunAjaran}
+      semester={semester}
     >
       {children}
     </DashboardShell>

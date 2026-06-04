@@ -193,6 +193,11 @@ export const guruNav: SidebarConfig = {
           href: "/guru/catatan",
           icon: MessageSquare,
         },
+        {
+          label: "Ranking Siswa",
+          href: "/guru/ranking",
+          icon: BarChart3,
+        },
       ],
     },
     {

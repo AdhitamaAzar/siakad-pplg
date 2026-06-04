@@ -14,21 +14,16 @@ import {
   BookOpen,
   TrendingUp,
   CalendarCheck,
-  ChevronRight,
   Award,
-  CheckCircle,
-  XCircle,
-  GraduationCap,
 } from "lucide-react";
 import prisma from "@/lib/prisma";
 import Link from "next/link";
-import GrafikPerformaGuru from "@/components/dashboard/GrafikPerformaGuru";
+import GuruDashboardTabs from "@/components/dashboard/GuruDashboardTabs";
+
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata: Metadata = { title: "Dashboard Guru" };
 export const revalidate = 300;
-
-const SEMESTER     = "Genap";
-const TAHUN_AJARAN = "2025/2026";
 
 // ── WARNA PER KELAS ───────────────────────────────────────────────────────────
 const KELAS_THEME = [
@@ -43,6 +38,7 @@ export default async function GuruDashboardPage() {
     redirect("/login");
   }
 
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const namaGuru = session?.user?.nama ?? "Guru";
 
   // ── Find Teacher Record ─────────────────────────────────────────────────────
@@ -226,207 +222,17 @@ export default async function GuruDashboardPage() {
         ))}
       </div>
 
-      {/* ── GRAFIK PERFORMA & STATISTIK ────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <GrafikPerformaGuru data={kelasStatsForChart} />
-        </div>
-
-        {/* Card Statistik Nilai & Absensi */}
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Statistik Akademik</h3>
-            <div className="space-y-3.5">
-              <div className="flex justify-between items-center pb-2.5 border-b border-slate-800/60">
-                <span className="text-xs text-slate-500">Rata-rata Nilai Tuntas</span>
-                <span className="text-sm font-semibold text-emerald-400 tabular-nums">
-                  {avgNilaiGlobal ? avgNilaiGlobal.toFixed(1) : "—"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center pb-2.5 border-b border-slate-800/60">
-                <span className="text-xs text-slate-500">Persentase Ketuntasan</span>
-                <span className="text-sm font-semibold text-indigo-300 tabular-nums">
-                  {pctTuntas}%
-                </span>
-              </div>
-              <div className="flex justify-between items-center pb-2.5 border-b border-slate-800/60">
-                <span className="text-xs text-slate-500">Jumlah Siswa Tuntas</span>
-                <span className="text-xs font-bold text-slate-300">
-                  <span className="text-emerald-400">{tuntasCount}</span> / {totalSiswa} siswa
-                </span>
-              </div>
-              <div className="flex justify-between items-center pb-2.5 border-b border-slate-800/60">
-                <span className="text-xs text-slate-500">Jumlah Siswa Belum Tuntas</span>
-                <span className="text-xs font-bold text-slate-300">
-                  <span className="text-rose-400">{totalSiswa - tuntasCount}</span> siswa
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500">Rata-rata Kehadiran</span>
-                <span className="text-sm font-semibold text-amber-400 tabular-nums">
-                  {avgKehadiranGlobal ? `${avgKehadiranGlobal.toFixed(1)}%` : "—"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-slate-800/60">
-            <div className="flex items-center justify-between text-[11px] text-slate-600 mb-2">
-              <span>Kehadiran Kumulatif</span>
-              <span className="font-semibold text-slate-400">{avgKehadiranGlobal.toFixed(1)}%</span>
-            </div>
-            <div className="h-2 rounded-full bg-slate-800">
-              <div
-                className="h-2 rounded-full bg-amber-400"
-                style={{ width: `${avgKehadiranGlobal}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── RINGKASAN KELAS ───────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-indigo-500" />
-            <h2 className="text-sm font-semibold text-slate-300">Kelas yang Diampu</h2>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {kelas.map((k, i) => {
-            const theme = KELAS_THEME[i % KELAS_THEME.length] || KELAS_THEME[0]!;
-            return (
-              <div
-                key={k.id}
-                className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5"
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${theme.dot}`} />
-                    <h3 className="font-bold text-white text-sm">{k.namaKelas}</h3>
-                  </div>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${theme.bg} ${theme.text}`}>
-                    {k.students.length} siswa
-                  </span>
-                </div>
-
-                {/* Mini daftar siswa */}
-                <div className="space-y-1.5 mb-4">
-                  {k.students.slice(0, 4).map((s) => (
-                    <div key={s.id} className="flex items-center gap-2">
-                      <div className={`w-6 h-6 rounded-full ${theme.bg} ring-1 ${theme.ring} flex items-center justify-center shrink-0`}>
-                        <span className={`text-[9px] font-bold ${theme.text}`}>
-                          {s.nama.charAt(0)}
-                        </span>
-                      </div>
-                      <span className="text-xs text-slate-400 truncate">{s.nama}</span>
-                    </div>
-                  ))}
-                  {k.students.length > 4 && (
-                    <p className="text-xs text-slate-600 pl-8">
-                      +{k.students.length - 4} siswa lainnya
-                    </p>
-                  )}
-                </div>
-
-                <Link
-                  href={`/guru/siswa?kelas=${k.id}`}
-                  className={`
-                    flex items-center justify-between w-full
-                    px-3 py-2 rounded-xl text-xs font-semibold
-                    ${theme.bg} ${theme.text}
-                    hover:opacity-80 transition-opacity
-                  `}
-                >
-                  <span>Lihat semua siswa</span>
-                  <ChevronRight size={14} />
-                </Link>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── NILAI TERBARU ─────────────────────────────────────────────── */}
-      {recentGrades.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-1 h-4 rounded-full bg-amber-400" />
-            <h2 className="text-sm font-semibold text-slate-300">Nilai Terbaru Diinput</h2>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800/60">
-                  {["Siswa", "Kelas", "Nilai Raport"].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/40">
-                {recentGrades.map((g) => (
-                  <tr key={g.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-4 py-3 text-slate-200 font-medium text-sm">
-                      {g.student.nama}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
-                      {g.student.kelas?.namaKelas ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`
-                        text-sm font-bold tabular-nums
-                        ${(g.nilaiRaport ?? 0) >= 90 ? "text-emerald-400" :
-                          (g.nilaiRaport ?? 0) >= 75 ? "text-indigo-400" :
-                          "text-amber-400"}
-                      `}>
-                        {g.nilaiRaport}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── QUICK ACTIONS ─────────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-1 h-4 rounded-full bg-sky-400" />
-          <h2 className="text-sm font-semibold text-slate-300">Aksi Cepat</h2>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: "Import Excel",   href: "/guru/import",   emoji: "📊" },
-            { label: "Daftar Siswa",   href: "/guru/siswa",    emoji: "👥" },
-            { label: "Nilai Siswa",    href: "/guru/nilai",    emoji: "📝" },
-            { label: "Absensi",        href: "/guru/absensi",  emoji: "✅" },
-          ].map(({ label, href, emoji }) => (
-            <Link
-              key={label}
-              href={href}
-              className="
-                flex items-center gap-3 p-4 rounded-xl
-                border border-slate-800/60 bg-slate-900/40
-                hover:bg-slate-800/60 hover:border-slate-700/60
-                transition-all duration-200 group
-              "
-            >
-              <span className="text-xl">{emoji}</span>
-              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
-                {label}
-              </span>
-            </Link>
-          ))}
-        </div>
-      </div>
+      {/* ── TABS (OVERVIEW, ANALYSIS, RECENT) ────────────────────────────── */}
+      <GuruDashboardTabs
+        totalSiswa={totalSiswa}
+        kelas={kelas}
+        avgNilaiGlobal={avgNilaiGlobal}
+        pctTuntas={pctTuntas}
+        tuntasCount={tuntasCount}
+        avgKehadiranGlobal={avgKehadiranGlobal}
+        kelasStatsForChart={kelasStatsForChart}
+        recentGrades={recentGrades}
+      />
 
     </div>
   );

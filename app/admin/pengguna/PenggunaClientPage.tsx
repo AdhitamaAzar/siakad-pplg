@@ -29,6 +29,9 @@ interface UserItem {
   student?: {
     nama: string;
   } | null;
+  teacher?: {
+    nama: string;
+  } | null;
 }
 
 interface ClassItem {
@@ -332,7 +335,9 @@ export default function PenggunaClientPage({ users, classes }: PenggunaClientPag
                     <td className="px-5 py-4 text-slate-400">
                       {user.role?.name === "siswa"
                         ? user.student?.nama || <span className="text-slate-650 italic">Profil Siswa Kosong</span>
-                        : user.role?.name === "guru" ? "Fandik Ariyanto, S.ST" : "Staff Administrator"
+                        : user.role?.name === "guru"
+                          ? user.teacher?.nama || <span className="text-indigo-400/50 italic">Profil Guru Kosong</span>
+                          : "Staff Administrator"
                       }
                     </td>
                     <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">

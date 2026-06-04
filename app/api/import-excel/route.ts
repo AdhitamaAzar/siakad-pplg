@@ -14,15 +14,12 @@ import { z }                         from "zod";
 import prisma                         from "@/lib/prisma";
 import { auth }                       from "@/lib/auth";
 import bcrypt                         from "bcryptjs";
+import { hitungWeightedGrade }        from "@/lib/gradeCalc";
+import { getActiveAcademicConfig }   from "@/lib/academicConfig";
 
 // ── KONSTANTA ─────────────────────────────────────────────────────────────────
 
-/** Mapping nama sheet → nama kelas di database */
-const SHEET_KELAS: Record<string, string> = {
-  xipplg1: "XI PPLG 1",
-  xipplg2: "XI PPLG 2",
-  xipplg3: "XI PPLG 3",
-};
+
 
 // ── ZOD SCHEMA ────────────────────────────────────────────────────────────────
 
@@ -262,26 +259,18 @@ function parseCatatanSheet(ws: XLSX.WorkSheet) {
       const nilaiTa1 = row[8] !== "" ? Number(row[8]) : null;
       const catatanText = row[11] !== "" ? String(row[11]).trim() : "";
 
-      let className = "";
-      if (i >= 1 && i <= 26) className = "XI PPLG 3";
-      else if (i >= 28 && i <= 53) className = "XI PPLG 2";
-      else if (i >= 56 && i <= 79) className = "XI PPLG 1";
-
-      if (className) {
-        results.push({
-          nama: name,
-          className,
-          judulProyek,
-          nilaiItem,
-          nilaiData,
-          nilaiAlur,
-          nilaiMetode,
-          nilaiTambah,
-          nilaiUrutan,
-          nilaiTa1,
-          catatan: catatanText || "Proyek Mandiri"
-        });
-      }
+      results.push({
+        nama: name,
+        judulProyek,
+        nilaiItem,
+        nilaiData,
+        nilaiAlur,
+        nilaiMetode,
+        nilaiTambah,
+        nilaiUrutan,
+        nilaiTa1,
+        catatan: catatanText || "Proyek Mandiri"
+      });
     }
   }
   return results;
@@ -326,32 +315,80 @@ function parseLaporanSheet(ws: XLSX.WorkSheet) {
  * Parse satu sheet Excel menjadi array baris yang sudah divalidasi.
  * Header mulai di baris 5 (index 4 dalam sheet).
  */
-function parseSheet(ws: XLSX.WorkSheet): { rows: ParsedRow[]; errors: string[] } {
+function parseSheet(ws: XLSX.WorkSheet, isRpl: boolean = true): { rows: ParsedRow[]; errors: string[] } {
   const rows:   ParsedRow[] = [];
   const errors: string[]    = [];
 
-  // Konversi ke array-of-arrays mulai row 5 (header_offset=4)
-  const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+  // Konversi ke array-of-arrays
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
+  if (aoa.length < 5) return { rows: [], errors: ["Sheet terlalu pendek (minimal 5 baris)."] };
 
-  // Mulai dari baris ke-6 (index 5) — baris 5 adalah header
-  for (let i = 5; i < aoa.length; i++) {
+  // Cari baris header
+  let headerRowIdx = 4;
+  for (let i = 0; i < Math.min(10, aoa.length); i++) {
+    const row = aoa[i] as any[];
+    if (row && row.some((cell: any) => String(cell).toLowerCase().includes("nis"))) {
+      headerRowIdx = i;
+      break;
+    }
+  }
+
+  const headers = (aoa[headerRowIdx] as string[]) || [];
+
+  // Temukan indeks kolom untuk setiap DB field
+  const fields = [
+    { key: "nis", matchers: ["nis", "no induk", "nomor induk"] },
+    { key: "nama", matchers: ["nama", "nama siswa", "nama lengkap"] },
+    { key: "github", matchers: isRpl ? ["github", "portofolio", "nilai github", "portfolio"] : ["tugas 1", "tugas1", "t1", "tg1", "tugas"] },
+    { key: "api", matchers: isRpl ? ["api", "nilai api", "tugas api"] : ["tugas 2", "tugas2", "t2", "tg2"] },
+    { key: "adminPanel", matchers: isRpl ? ["admin", "admin panel", "nilai admin panel"] : ["tugas 3", "tugas3", "t3", "tg3"] },
+    { key: "landingPage", matchers: isRpl ? ["landing", "landing page", "nilai landing page"] : ["tugas 4", "tugas4", "t4", "tg4"] },
+    { key: "kagglePython", matchers: isRpl ? ["kaggle python", "python"] : ["tugas 5", "tugas5", "t5", "tg5"] },
+    { key: "kaggleSql", matchers: isRpl ? ["kaggle sql", "sql"] : ["tugas 6", "tugas6", "t6", "tg6"] },
+    { key: "kaggleMl", matchers: isRpl ? ["kaggle ml", "ml"] : ["tugas 7", "tugas7", "t7", "tg7"] },
+    { key: "ujianMl", matchers: isRpl ? ["ujian ml", "ujian machine learning"] : ["ujian 1", "ujian1", "u1", "uh1", "uts", "ujian harian 1", "pts"] },
+    { key: "ujianSql", matchers: isRpl ? ["ujian sql"] : ["ujian 2", "ujian2", "u2", "uh2", "uas", "ujian harian 2", "pas"] },
+  ];
+
+  const colIdx: Record<string, number> = {};
+  fields.forEach((field) => {
+    // Cari exact match
+    let idx = headers.findIndex((h) =>
+      field.matchers.some((matcher) => String(h).toLowerCase().trim() === matcher)
+    );
+    // Cari fuzzy match
+    if (idx === -1) {
+      idx = headers.findIndex((h) =>
+        field.matchers.some((matcher) => String(h).toLowerCase().includes(matcher))
+      );
+    }
+    colIdx[field.key] = idx;
+  });
+
+  // Mulai dari baris setelah header
+  for (let i = headerRowIdx + 1; i < aoa.length; i++) {
     const row = aoa[i] as unknown[];
-    if (!row || !row[0]) continue; // skip baris kosong (no urut kosong)
+    if (!row) continue;
+
+    const nisVal = colIdx.nis !== -1 && colIdx.nis !== undefined ? cleanNis(row[colIdx.nis]) : "";
+    const namaVal = colIdx.nama !== -1 && colIdx.nama !== undefined ? String(row[colIdx.nama] ?? "").trim() : "";
+
+    if (nisVal === "" && namaVal === "") continue; // skip baris kosong
 
     const raw = {
       no:   row[0],
-      nis:  cleanNis(row[1]),
-      nama: String(row[2] ?? "").trim(),
+      nis:  nisVal,
+      nama: namaVal,
       nilai: {
-        github:       numOrNull(row[3]),
-        api:          numOrNull(row[4]),
-        adminPanel:   numOrNull(row[5]),
-        landingPage:  numOrNull(row[6]),
-        kagglePython: numOrNull(row[7]),
-        kaggleSql:    numOrNull(row[8]),
-        kaggleMl:     numOrNull(row[9]),
-        ujianMl:      numOrNull(row[10]),
-        ujianSql:     numOrNull(row[11]),
+        github:       colIdx.github !== -1 && colIdx.github !== undefined ? numOrNull(row[colIdx.github]) : null,
+        api:          colIdx.api !== -1 && colIdx.api !== undefined ? numOrNull(row[colIdx.api]) : null,
+        adminPanel:   colIdx.adminPanel !== -1 && colIdx.adminPanel !== undefined ? numOrNull(row[colIdx.adminPanel]) : null,
+        landingPage:  colIdx.landingPage !== -1 && colIdx.landingPage !== undefined ? numOrNull(row[colIdx.landingPage]) : null,
+        kagglePython: colIdx.kagglePython !== -1 && colIdx.kagglePython !== undefined ? numOrNull(row[colIdx.kagglePython]) : null,
+        kaggleSql:    colIdx.kaggleSql !== -1 && colIdx.kaggleSql !== undefined ? numOrNull(row[colIdx.kaggleSql]) : null,
+        kaggleMl:     colIdx.kaggleMl !== -1 && colIdx.kaggleMl !== undefined ? numOrNull(row[colIdx.kaggleMl]) : null,
+        ujianMl:      colIdx.ujianMl !== -1 && colIdx.ujianMl !== undefined ? numOrNull(row[colIdx.ujianMl]) : null,
+        ujianSql:     colIdx.ujianSql !== -1 && colIdx.ujianSql !== undefined ? numOrNull(row[colIdx.ujianSql]) : null,
       },
     };
 
@@ -404,6 +441,13 @@ export async function POST(req: NextRequest) {
         },
       });
       targetSubjectId = defaultSubject.id;
+    }
+
+    const subject = await prisma.subject.findUnique({
+      where: { id: targetSubjectId },
+    });
+    if (!subject) {
+      return NextResponse.json({ ok: false, message: "Mata pelajaran tidak ditemukan." }, { status: 404 });
     }
 
     for (const sheet of sheets) {
@@ -622,43 +666,45 @@ export async function POST(req: NextRequest) {
               },
             });
 
-            const vals = Object.values(row.nilai).map((v) => (v === "" || v === undefined || v === null ? null : Number(v)));
-            const rataRata = hitungRataRata(vals);
+            const gradeInput = {
+              nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : (existingGrade?.nilaiGithub ?? null),
+              nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : (existingGrade?.nilaiApi ?? null),
+              nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : (existingGrade?.nilaiAdminPanel ?? null),
+              nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : (existingGrade?.nilaiLandingPage ?? null),
+              nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : (existingGrade?.nilaiKagglePython ?? null),
+              nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : (existingGrade?.nilaiKaggleSql ?? null),
+              nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : (existingGrade?.nilaiKaggleMl ?? null),
+              nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : (existingGrade?.nilaiUjianMl ?? null),
+              nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : (existingGrade?.nilaiUjianSql ?? null),
+            };
+
+            const calc = hitungWeightedGrade(gradeInput, subject);
 
             // Re-kalkulasi nilaiHasil dan nilaiRaport dengan TA1
-            const avgTugas = rataRata ?? 0;
             const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
             const ta2 = existingGrade?.nilaiTa2 ?? 0;
 
-            const listFinal = [avgTugas];
+            const listFinal = [];
+            if (calc.rataRata !== null) listFinal.push(calc.rataRata);
             if (ta1 > 0) listFinal.push(ta1);
             if (ta2 > 0) listFinal.push(ta2);
 
-            const nilaiHasil = listFinal.reduce((a, b) => a + b, 0) / listFinal.length;
-            const nilaiRaport = Math.round(nilaiHasil);
+            const nilaiHasil = listFinal.length > 0 ? listFinal.reduce((a, b) => a + b, 0) / listFinal.length : null;
+            const nilaiRaport = nilaiHasil !== null ? Math.round(nilaiHasil) : null;
             const predikat = hitungPredikat(nilaiRaport);
-            const totalKosong = vals.filter((v) => v === null).length;
-            const statusTuntas = nilaiRaport >= 75 ? "TUNTAS" : "BELUM";
+            const statusTuntas = nilaiRaport !== null ? (nilaiRaport >= 75 ? "TUNTAS" : "BELUM") : null;
 
             const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
 
             const gradeData = {
-              nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : undefined,
-              nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : undefined,
-              nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : undefined,
-              nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : undefined,
-              nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : undefined,
-              nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : undefined,
-              nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : undefined,
-              nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : undefined,
-              nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : undefined,
-              rataRata,
-              nilaiTa1: ta1 > 0 ? ta1 : null,
-              persentaseHadir: finalPersentaseHadir,
+              ...gradeInput,
+              rataRata:           calc.rataRata,
+              nilaiTa1:           ta1 > 0 ? ta1 : null,
+              persentaseHadir:    finalPersentaseHadir,
               nilaiHasil,
               nilaiRaport,
               predikat,
-              jumlahNilaiKosong:  totalKosong,
+              jumlahNilaiKosong:  calc.jumlahNilaiKosong,
               statusTuntas,
             };
 
@@ -722,6 +768,7 @@ export async function POST(req: NextRequest) {
   let file: File;
   let semester: string;
   let tahunAjaran: string;
+  let subjectId: number | null = null;
 
   try {
     const form = await req.formData();
@@ -730,8 +777,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, message: "File tidak ditemukan." }, { status: 400 });
     }
     file = f as File;
-    semester = (form.get("semester") as string) || "Genap";
-    tahunAjaran = (form.get("tahunAjaran") as string) || "2025/2026";
+    const activeCfg = await getActiveAcademicConfig();
+    semester = (form.get("semester") as string) || activeCfg.semester;
+    tahunAjaran = (form.get("tahunAjaran") as string) || activeCfg.tahunAjaran;
+    const subIdVal = form.get("subjectId");
+    if (subIdVal) {
+      subjectId = Number(subIdVal);
+    }
   } catch {
     return NextResponse.json({ ok: false, message: "Gagal membaca form data." }, { status: 400 });
   }
@@ -743,7 +795,12 @@ export async function POST(req: NextRequest) {
   // Proses setiap sheet nilai
   const sheetResults = [];
 
-  // Pastikan subject default untuk import Excel ada di database
+  // Ambil data semua kelas dari DB untuk pencocokan dinamis
+  const allDbClasses = await prisma.class.findMany({
+    where: { tahunAjaran },
+  });
+
+  // Tentukan mata pelajaran target
   const defaultSubject = await prisma.subject.upsert({
     where:  { kodeMapel: "PPLG-IMPORT" },
     update: {},
@@ -753,6 +810,17 @@ export async function POST(req: NextRequest) {
       tingkat:   11,
     },
   });
+
+  let subject = defaultSubject;
+  if (subjectId) {
+    const foundSub = await prisma.subject.findUnique({
+      where: { id: subjectId },
+    });
+    if (foundSub) {
+      subject = foundSub;
+    }
+  }
+  const isRpl = subject.kodeMapel.toLowerCase().includes("pplg");
 
   // Load teacherId or fallback
   let teacherId: number | null = null;
@@ -765,41 +833,56 @@ export async function POST(req: NextRequest) {
     teacherId = firstTeacher?.id || null;
   }
 
-  for (const [sheetName, namaKelas] of Object.entries(SHEET_KELAS)) {
+  // Cari sheet nilai dinamis (abaikan catatan, ab..., l...)
+  const gradeSheets = workbook.SheetNames.filter((name) => {
+    const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (clean === "catatan" || clean.startsWith("ab") || clean.startsWith("l")) {
+      return false;
+    }
+    return true;
+  });
+
+  for (const sheetName of gradeSheets) {
     const ws = workbook.Sheets[sheetName];
-    if (!ws) {
-      sheetResults.push({ sheet: sheetName, success: 0, skipped: 0, errors: [`Sheet "${sheetName}" tidak ditemukan dalam file.`] });
-      continue;
+    if (!ws) continue;
+
+    // Pencocokan nama sheet ke kelas DB (misal: "xipplg1" -> "XI PPLG 1")
+    const cleanSheetName = sheetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const matchedClass = allDbClasses.find((c) => {
+      const cleanClassName = c.namaKelas.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return cleanClassName === cleanSheetName || cleanSheetName.includes(cleanClassName) || cleanClassName.includes(cleanSheetName);
+    });
+
+    let namaKelas = sheetName;
+    if (matchedClass) {
+      namaKelas = matchedClass.namaKelas;
     }
 
     // Parse auxiliary sheets in Form data flow too
     const attSheetName = workbook.SheetNames.find(name => {
-      const clean = name.toLowerCase().replace(/\s+/g, "");
-      return clean === "ab" + sheetName.toLowerCase().replace(/\s+/g, "");
+      const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return clean === "ab" + cleanSheetName || clean.includes("ab" + cleanSheetName);
     });
     const wsAtt = attSheetName ? workbook.Sheets[attSheetName] : null;
     const attendanceRows = wsAtt ? parseAttendanceSheet(wsAtt) : [];
 
     const repSheetName = workbook.SheetNames.find(name => {
-      const clean = name.toLowerCase().replace(/\s+/g, "");
-      return clean === "l" + sheetName.toLowerCase().replace(/\s+/g, "");
+      const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return clean === "l" + cleanSheetName || clean.includes("l" + cleanSheetName);
     });
     const wsRep = repSheetName ? workbook.Sheets[repSheetName] : null;
     const laporanRows = wsRep ? parseLaporanSheet(wsRep) : [];
 
     const catSheetName = workbook.SheetNames.find(name => {
-      const clean = name.toLowerCase().replace(/\s+/g, "");
+      const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "");
       return clean === "catatan";
     });
     const wsCat = catSheetName ? workbook.Sheets[catSheetName] : null;
-    const allCatatanRows = wsCat ? parseCatatanSheet(wsCat) : [];
-    const filteredCatatanRows = allCatatanRows.filter(r => 
-      r.className.toLowerCase().replace(/\s+/g, "") === namaKelas.toLowerCase().replace(/\s+/g, "")
-    );
+    const filteredCatatanRows = wsCat ? parseCatatanSheet(wsCat) : [];
 
-    const { rows, errors: parseErrors } = parseSheet(ws);
+    const { rows, errors: parseErrors } = parseSheet(ws, isRpl);
 
-    const match = namaKelas.match(/^(X|XI|XII)\b/i);
+    const match = namaKelas.match(/^(X|XI|XII)\b/i) || namaKelas.match(/^(X|XI|XII)/i);
     let tingkat = 11;
     if (match) {
       if (match[1].toUpperCase() === "X") tingkat = 10;
@@ -984,49 +1067,51 @@ export async function POST(req: NextRequest) {
           const existingGrade = await tx.grade.findFirst({
             where: {
               studentId: student.id,
-              subjectId: defaultSubject.id,
+              subjectId: subject.id,
               semester,
               tahunAjaran,
             },
           });
 
-          const vals = Object.values(row.nilai);
-          const rataRata = hitungRataRata(vals);
+          const gradeInput = {
+            nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : (existingGrade?.nilaiGithub ?? null),
+            nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : (existingGrade?.nilaiApi ?? null),
+            nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : (existingGrade?.nilaiAdminPanel ?? null),
+            nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : (existingGrade?.nilaiLandingPage ?? null),
+            nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : (existingGrade?.nilaiKagglePython ?? null),
+            nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : (existingGrade?.nilaiKaggleSql ?? null),
+            nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : (existingGrade?.nilaiKaggleMl ?? null),
+            nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : (existingGrade?.nilaiUjianMl ?? null),
+            nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : (existingGrade?.nilaiUjianSql ?? null),
+          };
+
+          const calc = hitungWeightedGrade(gradeInput, subject);
 
           // Re-kalkulasi nilaiHasil dan nilaiRaport dengan TA1
-          const avgTugas = rataRata ?? 0;
           const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
           const ta2 = existingGrade?.nilaiTa2 ?? 0;
 
-          const listFinal = [avgTugas];
+          const listFinal = [];
+          if (calc.rataRata !== null) listFinal.push(calc.rataRata);
           if (ta1 > 0) listFinal.push(ta1);
           if (ta2 > 0) listFinal.push(ta2);
 
-          const nilaiHasil = listFinal.reduce((a, b) => a + b, 0) / listFinal.length;
-          const nilaiRaport = Math.round(nilaiHasil);
+          const nilaiHasil = listFinal.length > 0 ? listFinal.reduce((a, b) => a + b, 0) / listFinal.length : null;
+          const nilaiRaport = nilaiHasil !== null ? Math.round(nilaiHasil) : null;
           const predikat = hitungPredikat(nilaiRaport);
-          const totalKosong = vals.filter((v) => v === null).length;
-          const statusTuntas = nilaiRaport >= 75 ? "TUNTAS" : "BELUM";
+          const statusTuntas = nilaiRaport !== null ? (nilaiRaport >= 75 ? "TUNTAS" : "BELUM") : null;
 
           const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
 
           const gradeData = {
-            nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : undefined,
-            nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : undefined,
-            nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : undefined,
-            nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : undefined,
-            nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : undefined,
-            nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : undefined,
-            nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : undefined,
-            nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : undefined,
-            nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : undefined,
-            rataRata,
-            nilaiTa1: ta1 > 0 ? ta1 : null,
-            persentaseHadir: finalPersentaseHadir,
+            ...gradeInput,
+            rataRata:           calc.rataRata,
+            nilaiTa1:           ta1 > 0 ? ta1 : null,
+            persentaseHadir:    finalPersentaseHadir,
             nilaiHasil,
             nilaiRaport,
             predikat,
-            jumlahNilaiKosong:  totalKosong,
+            jumlahNilaiKosong:  calc.jumlahNilaiKosong,
             statusTuntas,
           };
 
@@ -1039,7 +1124,7 @@ export async function POST(req: NextRequest) {
             await tx.grade.create({
               data: {
                 studentId:          student.id,
-                subjectId:          defaultSubject.id,
+                subjectId:          subject.id,
                 semester,
                 tahunAjaran,
                 ...gradeData,

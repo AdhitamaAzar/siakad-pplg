@@ -7,11 +7,6 @@
 
 import prisma from "@/lib/prisma";
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
-const SEMESTER     = "Genap";
-const TAHUN_AJARAN = "2025/2026";
-
 // ─── TYPE DEFINITIONS ─────────────────────────────────────────────────────────
 
 /** Statistik summary satu kelas */
@@ -90,6 +85,13 @@ export interface AdminDashboardData {
  * @returns AdminDashboardData lengkap siap ditampilkan
  */
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
+  const activeYearRecord = await prisma.academicYear.findFirst({
+    where: { isActive: true },
+    select: { tahunAjaran: true }
+  });
+  const TAHUN_AJARAN = activeYearRecord?.tahunAjaran || "2025/2026";
+  const SEMESTER     = "Genap";
+
   // Jalankan semua query secara paralel
   const [kelas, topGrades, bottomGrades, allGrades, allAttendances, totalGuru, totalMapel] = await Promise.all([
     // Query 1: Semua kelas + jumlah siswa

@@ -1,18 +1,47 @@
 // =============================================================================
 // FILE: app/guru/profil/page.tsx
-// TUJUAN: Halaman profil guru — info akun Fandik Ariyanto.
+// TUJUAN: Halaman profil guru — menampilkan info profil secara dinamis.
 // =============================================================================
 
 import type { Metadata } from "next";
 import { auth }          from "@/lib/auth";
 import { redirect }      from "next/navigation";
-import { UserCircle, Key, GraduationCap, BookOpen } from "lucide-react";
+import { UserCircle, Key, GraduationCap, BookOpen, Mail } from "lucide-react";
+import prisma            from "@/lib/prisma";
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata: Metadata = { title: "Profil Saya — Guru" };
 
 export default async function GuruProfilPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const { tahunAjaran, semester } = await getActiveAcademicConfig();
+
+  // Fetch teacher profile
+  const teacher = await prisma.teacher.findUnique({
+    where: { userId: Number(session.user.id) },
+    include: {
+      classSubjects: {
+        include: {
+          kelas: true,
+          subject: true,
+        },
+      },
+    },
+  });
+
+  const subjectNames = Array.from(
+    new Set(teacher?.classSubjects.map((cs) => cs.subject.namaMapel) ?? [])
+  ).join(", ") || "Belum ditentukan";
+
+  const classNames = Array.from(
+    new Set(teacher?.classSubjects.map((cs) => cs.kelas.namaKelas) ?? [])
+  ).join(", ") || "Belum ditentukan";
+
+  const teacherName = teacher?.nama ?? session.user.nama ?? "Guru";
+  const teacherNip = teacher?.nip ?? "—";
+  const teacherEmail = teacher?.email ?? `${session.user.username}@smk.sch.id`;
 
   return (
     <div className="space-y-6 max-w-[600px]">
@@ -30,8 +59,8 @@ export default async function GuruProfilPage() {
           <GraduationCap size={36} className="text-indigo-300" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-white">Fandik Ariyanto, S.ST</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Guru Mata Pelajaran PPLG</p>
+          <h2 className="text-xl font-bold text-white">{teacherName}</h2>
+          <p className="text-slate-400 text-sm mt-0.5">NIP: {teacherNip}</p>
           <div className="mt-2 flex items-center gap-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full px-3 py-1 w-fit">
             <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
             <span className="text-xs text-indigo-300 font-medium">Guru</span>
@@ -42,11 +71,13 @@ export default async function GuruProfilPage() {
       {/* Info */}
       <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 divide-y divide-slate-800/60">
         {[
-          { icon: Key,           label: "Username",       value: session.user.username ?? "fandik.ariyanto" },
-          { icon: GraduationCap, label: "Jabatan",        value: "Guru Mata Pelajaran" },
-          { icon: BookOpen,      label: "Mata Pelajaran", value: "Pengembangan Perangkat Lunak dan Gim" },
-          { icon: BookOpen,      label: "Kelas Diampu",   value: "XI PPLG 1, XI PPLG 2, XI PPLG 3" },
-          { icon: BookOpen,      label: "Tahun Ajaran",   value: "2025/2026 (Semester Genap)" },
+          { icon: Key,           label: "Username",       value: session.user.username },
+          { icon: UserCircle,    label: "Nama Lengkap",   value: teacherName },
+          { icon: GraduationCap, label: "NIP",            value: teacherNip },
+          { icon: Mail,          label: "Email",          value: teacherEmail },
+          { icon: BookOpen,      label: "Mata Pelajaran", value: subjectNames },
+          { icon: BookOpen,      label: "Kelas Diampu",   value: classNames },
+          { icon: BookOpen,      label: "Tahun Ajaran",   value: `${tahunAjaran} (Semester ${semester})` },
         ].map(({ icon: Icon, label, value }) => (
           <div key={label} className="px-5 py-3.5 flex items-center gap-3">
             <Icon size={14} className="text-slate-600 shrink-0" />

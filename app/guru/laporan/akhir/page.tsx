@@ -20,10 +20,9 @@ import {
   Award,
 } from "lucide-react";
 
-export const metadata: Metadata = { title: "Laporan Akhir Semester" };
+import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
-const TAHUN_AJARAN = "2025/2026";
-const SEMESTER     = "Genap";
+export const metadata: Metadata = { title: "Laporan Akhir Semester" };
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -81,6 +80,8 @@ function getKelasAccent(idx: number): {
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
 export default async function GuruLaporanAkhirPage() {
+  const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
+
   const kelasList = await prisma.class.findMany({
     where: { tahunAjaran: TAHUN_AJARAN },
     orderBy: { namaKelas: "asc" },
