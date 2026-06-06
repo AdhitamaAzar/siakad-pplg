@@ -1,35 +1,17 @@
 // =============================================================================
 // FILE: app/guru/laporan/nilai/page.tsx
 // TUJUAN: Halaman rekap nilai laporan untuk guru.
-//         Sama seperti guru/nilai namun dengan baris statistik tambahan di bawah:
-//         rata-rata kelas, nilai tertinggi, nilai terendah, % tuntas.
+//         Menampilkan nilai per task (dinamis) + statistik kelas.
 //         Mendukung filter kelas via searchParams.
-//         Didesain untuk dicetak / diunduh.
-// SEMESTER: Genap 2025/2026
 // =============================================================================
 
 import type { Metadata } from "next";
 import prisma from "@/lib/prisma";
 import Link from "next/link";
 import { FileText, Printer, TrendingUp, TrendingDown, BarChart3, CheckCircle2 } from "lucide-react";
-
 import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata: Metadata = { title: "Rekap Nilai — Laporan" };
-
-const KOMPONEN = [
-  { key: "nilaiGithub"       as const, label: "Github" },
-  { key: "nilaiApi"          as const, label: "API" },
-  { key: "nilaiAdminPanel"   as const, label: "Admin" },
-  { key: "nilaiLandingPage"  as const, label: "Landing" },
-  { key: "nilaiKagglePython" as const, label: "Python" },
-  { key: "nilaiKaggleSql"    as const, label: "SQL" },
-  { key: "nilaiKaggleMl"     as const, label: "ML" },
-  { key: "nilaiUjianMl"      as const, label: "U.ML" },
-  { key: "nilaiUjianSql"     as const, label: "U.SQL" },
-] as const;
-
-type GradeKey = typeof KOMPONEN[number]["key"];
 
 // ─── SUB-COMPONENTS ───────────────────────────────────────────────────────────
 
@@ -74,7 +56,7 @@ function StatCard({
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
 interface PageProps {
-  searchParams: Promise<{ kelas?: string }>;
+  searchParams: Promise<{ kelas?: string; mapel?: string }>;
 }
 
 export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) {
@@ -89,18 +71,39 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
   const activeKelasId = sp.kelas ? Number(sp.kelas) : kelasList[0]?.id;
   const activeKelas   = kelasList.find((k) => k.id === activeKelasId);
 
+  // Ambil semua subject + tasks
+  const subjectsList = await prisma.subject.findMany({
+    orderBy: { namaMapel: "asc" },
+    select: { id: true, namaMapel: true, kodeMapel: true },
+  });
+  const activeSubjectId = sp.mapel ? Number(sp.mapel) : subjectsList[0]?.id;
+
+  // Ambil tasks untuk subject aktif (untuk header kolom dinamis)
+  const activeTasks = activeSubjectId
+    ? await prisma.task.findMany({
+        where: { subjectId: activeSubjectId, isActive: true },
+        orderBy: { urutan: "asc" },
+      })
+    : [];
+
+  // Ambil siswa + grade + grade details
   const students = await prisma.student.findMany({
     where: { kelasId: activeKelasId },
     include: {
       grades: {
-        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+        where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN, subjectId: activeSubjectId },
         take: 1,
+        include: {
+          details: {
+            include: { task: true },
+          },
+        },
       },
     },
     orderBy: { nama: "asc" },
   });
 
-  // ─── Kalkulasi statistik ─────────────────────────────────────────────────
+  // ─── Kalkulasi statistik ──────────────────────────────────────────────────
   const withNilai = students.filter((s) => s.grades[0]?.nilaiRaport != null);
   const nilaiList = withNilai.map((s) => s.grades[0]!.nilaiRaport!);
 
@@ -172,22 +175,40 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
         />
       </div>
 
-      {/* ── Tab kelas ────────────────────────────────────────────────── */}
-      <div className="flex gap-2 flex-wrap print:hidden">
-        {kelasList.map((k) => (
-          <Link
-            key={k.id}
-            href={`/guru/laporan/nilai?kelas=${k.id}`}
-            className={`
-              px-4 py-2 rounded-xl text-sm font-semibold border transition-all
-              ${k.id === activeKelasId
-                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
-                : "bg-slate-900/60 text-slate-500 border-slate-800/60 hover:text-slate-300"}
-            `}
-          >
-            {k.namaKelas}
-          </Link>
-        ))}
+      {/* ── Filter kelas & mapel ─────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-4 print:hidden">
+        <div className="flex gap-2 flex-wrap">
+          {kelasList.map((k) => (
+            <Link
+              key={k.id}
+              href={`/guru/laporan/nilai?kelas=${k.id}${activeSubjectId ? `&mapel=${activeSubjectId}` : ""}`}
+              className={`
+                px-4 py-2 rounded-xl text-sm font-semibold border transition-all
+                ${k.id === activeKelasId
+                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                  : "bg-slate-900/60 text-slate-500 border-slate-800/60 hover:text-slate-300"}
+              `}
+            >
+              {k.namaKelas}
+            </Link>
+          ))}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {subjectsList.map((s) => (
+            <Link
+              key={s.id}
+              href={`/guru/laporan/nilai?kelas=${activeKelasId}&mapel=${s.id}`}
+              className={`
+                px-4 py-2 rounded-xl text-sm font-semibold border transition-all
+                ${s.id === activeSubjectId
+                  ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                  : "bg-slate-900/60 text-slate-500 border-slate-800/60 hover:text-slate-300"}
+              `}
+            >
+              {s.namaMapel}
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* ── Tabel nilai ──────────────────────────────────────────────── */}
@@ -201,12 +222,13 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
               <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 sticky left-8 bg-slate-900/60 min-w-[180px]">
                 Nama Siswa
               </th>
-              {KOMPONEN.map((k) => (
+              {/* Kolom dinamis berdasarkan tasks */}
+              {activeTasks.map((t) => (
                 <th
-                  key={k.key}
+                  key={t.id}
                   className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500"
                 >
-                  {k.label}
+                  {t.nama}
                 </th>
               ))}
               <th className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -234,12 +256,11 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
                   <td className="px-4 py-2.5 text-slate-200 font-medium sticky left-8 bg-inherit min-w-[180px]">
                     {s.nama}
                   </td>
-                  {KOMPONEN.map((k) => (
-                    <Cell
-                      key={k.key}
-                      nilai={g ? (g[k.key as GradeKey] as number | null) : null}
-                    />
-                  ))}
+                  {/* Nilai per task (dinamis) */}
+                  {activeTasks.map((t) => {
+                    const detail = g?.details?.find((d) => d.taskId === t.id);
+                    return <Cell key={t.id} nilai={detail?.nilai ?? null} />;
+                  })}
                   {/* Avg */}
                   <td className="px-3 py-2.5 text-center text-xs font-semibold text-slate-400 tabular-nums">
                     {g?.rataRata?.toFixed(1) ?? "—"}
@@ -286,17 +307,21 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
                 <td className="px-4 py-3 text-xs font-bold text-slate-400 sticky left-8 bg-slate-800/20">
                   STATISTIK KELAS
                 </td>
-                {/* Rata-rata per komponen */}
-                {KOMPONEN.map((k) => {
+                {/* Rata-rata per task */}
+                {activeTasks.map((t) => {
                   const vals = students
-                    .map((s) => s.grades[0]?.[k.key as GradeKey] as number | null)
+                    .map((s) => {
+                      const g = s.grades[0];
+                      const detail = g?.details?.find((d) => d.taskId === t.id);
+                      return detail?.nilai ?? null;
+                    })
                     .filter((v): v is number => v !== null);
                   const avg = vals.length
                     ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(0)
                     : "—";
                   return (
                     <td
-                      key={k.key}
+                      key={t.id}
                       className="px-2 py-3 text-center text-xs font-bold text-slate-400 tabular-nums"
                     >
                       {avg}
@@ -329,7 +354,7 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
             {students.length === 0 && (
               <tr>
                 <td
-                  colSpan={15}
+                  colSpan={activeTasks.length + 6}
                   className="px-4 py-8 text-center text-slate-600 text-sm"
                 >
                   Belum ada data siswa.

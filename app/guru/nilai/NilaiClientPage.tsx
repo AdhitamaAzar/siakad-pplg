@@ -4,7 +4,7 @@
 // FILE: app/guru/nilai/NilaiClientPage.tsx
 // TUJUAN: Client component untuk halaman rekap nilai guru.
 //         Menampilkan tabel nilai + tombol Edit tiap baris.
-//         Klik Edit → modal input 9 komponen nilai + auto-kalkulasi preview.
+//         Klik Edit → modal input komponen nilai + auto-kalkulasi preview.
 // =============================================================================
 
 import { useState, useTransition, useEffect } from "react";
@@ -12,57 +12,40 @@ import Link from "next/link";
 import { Pencil, X, Save, Loader2, CheckCircle2, AlertCircle, Settings } from "lucide-react";
 import BobotModal from "./BobotModal";
 
+// Task interface (sistem dinamis)
+interface TaskItem {
+  id: number;
+  nama: string;
+  bobot: number;
+  isActive: boolean;
+  urutan: number;
+}
+
+// Subject dengan tasks (menggantikan SubjectWithWeights lama)
 interface SubjectWithWeights {
   id: number;
   namaMapel: string;
   kodeMapel: string;
-  weightGithub: number;
-  weightApi: number;
-  weightAdminPanel: number;
-  weightLandingPage: number;
-  weightKagglePython: number;
-  weightKaggleSql: number;
-  weightKaggleMl: number;
-  weightUjianMl: number;
-  weightUjianSql: number;
-  activeGithub: boolean;
-  activeApi: boolean;
-  activeAdminPanel: boolean;
-  activeLandingPage: boolean;
-  activeKagglePython: boolean;
-  activeKaggleSql: boolean;
-  activeKaggleMl: boolean;
-  activeUjianMl: boolean;
-  activeUjianSql: boolean;
+  tingkat: number;
+  tasks: TaskItem[];
 }
 
-const getKomponen = (isRpl: boolean) => [
-  { key: "nilaiGithub" as const,      label: isRpl ? "Github" : "Tugas 1",        desc: isRpl ? "Portfolio / Link GitHub" : "Tugas 1" },
-  { key: "nilaiApi" as const,         label: isRpl ? "Tugas API" : "Tugas 2",     desc: isRpl ? "Tugas pembuatan API" : "Tugas 2" },
-  { key: "nilaiAdminPanel" as const,  label: isRpl ? "Admin Panel" : "Tugas 3",   desc: isRpl ? "Tugas Admin Panel" : "Tugas 3" },
-  { key: "nilaiLandingPage" as const, label: isRpl ? "Landing Page" : "Tugas 4",  desc: isRpl ? "Link Landing Page" : "Tugas 4" },
-  { key: "nilaiKagglePython" as const,label: isRpl ? "Kaggle Python" : "Tugas 5", desc: isRpl ? "Kaggle Intro to Python" : "Tugas 5" },
-  { key: "nilaiKaggleSql" as const,   label: isRpl ? "Kaggle SQL" : "Tugas 6",    desc: isRpl ? "Kaggle Intro to SQL" : "Tugas 6" },
-  { key: "nilaiKaggleMl" as const,    label: isRpl ? "Kaggle ML" : "Tugas 7",     desc: isRpl ? "Kaggle Machine Learning" : "Tugas 7" },
-  { key: "nilaiUjianMl" as const,     label: isRpl ? "Ujian ML" : "Ujian 1",      desc: isRpl ? "Ujian Online Machine Learning" : "Ujian 1" },
-  { key: "nilaiUjianSql" as const,    label: isRpl ? "Ujian SQL" : "Ujian 2",     desc: isRpl ? "Ujian Online SQL" : "Ujian 2" },
-] as const;
-
-type KomponenKey = ReturnType<typeof getKomponen>[number]["key"];
+// GradeDetail per task
+interface GradeDetailData {
+  taskId: number;
+  nilai: number | null;
+}
 
 interface GradeData {
-  nilaiGithub?: number | null;
-  nilaiApi?: number | null;
-  nilaiAdminPanel?: number | null;
-  nilaiLandingPage?: number | null;
-  nilaiKagglePython?: number | null;
-  nilaiKaggleSql?: number | null;
-  nilaiKaggleMl?: number | null;
-  nilaiUjianMl?: number | null;
-  nilaiUjianSql?: number | null;
+  id?: number;
   rataRata?: number | null;
   nilaiRaport?: number | null;
   predikat?: string | null;
+  statusTuntas?: string | null;
+  jumlahNilaiKosong?: number | null;
+  persentaseMaju?: number | null;
+  subjectId?: number | null;
+  details?: GradeDetailData[];
 }
 
 interface Student {
@@ -91,7 +74,7 @@ function nilaiColor(nilai: number | null | undefined) {
 }
 
 function Cell({ nilai }: { nilai: number | null | undefined }) {
-  if (!nilai) return <td className="px-2 py-2.5 text-center text-slate-700 text-xs">—</td>;
+  if (nilai === null || nilai === undefined) return <td className="px-2 py-2.5 text-center text-slate-700 text-xs">—</td>;
   return (
     <td className={`px-2 py-2.5 text-center text-xs font-semibold tabular-nums ${nilaiColor(nilai)}`}>
       {nilai}
@@ -99,32 +82,21 @@ function Cell({ nilai }: { nilai: number | null | undefined }) {
   );
 }
 
-
 /** Hitung preview rata-rata dari form values secara berbobot */
 function hitungPreview(
-  form: Record<string, string>,
-  komponen: readonly any[],
-  subject: SubjectWithWeights | undefined
+  form: Record<number, string>,
+  tasks: TaskItem[]
 ): { rata: number | null; raport: number | null } {
-  if (!subject) return { rata: null, raport: null };
-
   let weightedSum = 0;
   let activeWeightSum = 0;
 
-  for (const k of komponen) {
-    const activeKey = k.key.replace("nilai", "active");
-    const weightKey = k.key.replace("nilai", "weight");
-
-    const isActive = subject[activeKey as keyof SubjectWithWeights];
-    if (isActive) {
-      const valStr = form[k.key];
-      if (valStr !== "" && valStr !== null && valStr !== undefined) {
-        const val = Number(valStr);
-        const weight = subject[weightKey as keyof SubjectWithWeights] as number;
-        if (!isNaN(val) && val >= 0) {
-          weightedSum += val * weight;
-          activeWeightSum += weight;
-        }
+  for (const t of tasks) {
+    const valStr = form[t.id];
+    if (valStr !== "" && valStr !== null && valStr !== undefined) {
+      const val = Number(valStr);
+      if (!isNaN(val) && val >= 0) {
+        weightedSum += val * t.bobot;
+        activeWeightSum += t.bobot;
       }
     }
   }
@@ -137,32 +109,31 @@ function hitungPreview(
 // ─── MODAL EDIT NILAI ──────────────────────────────────────────────────────────
 function EditModal({
   student,
-  isRpl,
   subject,
   onClose,
   onSaved,
 }: {
   student: Student;
-  isRpl: boolean;
   subject: SubjectWithWeights | undefined;
   onClose: () => void;
   onSaved: (studentId: number, grade: GradeData) => void;
 }) {
   const grade = student.grades[0] ?? {};
-  const komponen = getKomponen(isRpl);
+  const tasks = subject ? subject.tasks.filter((t) => t.isActive) : [];
 
-  const initialForm: Record<string, string> = {};
-  for (const k of komponen) {
-    const v = grade[k.key as KomponenKey];
-    initialForm[k.key] = v != null ? String(v) : "";
+  const initialForm: Record<number, string> = {};
+  for (const t of tasks) {
+    const detail = grade.details?.find((d) => d.taskId === t.id);
+    const v = detail?.nilai;
+    initialForm[t.id] = v != null ? String(v) : "";
   }
 
-  const [form, setForm] = useState<Record<string, string>>(initialForm);
+  const [form, setForm] = useState<Record<number, string>>(initialForm);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "ok" | "err">("idle");
   const [errMsg, setErrMsg] = useState("");
 
-  const preview = hitungPreview(form, komponen, subject);
+  const preview = hitungPreview(form, tasks);
 
   function predikatLabel(n: number | null) {
     if (!n) return "—";
@@ -172,20 +143,29 @@ function EditModal({
     return "Perlu Bimbingan";
   }
 
-  function handleChange(key: string, val: string) {
+  function handleChange(taskId: number, val: string) {
     // Hanya izinkan angka 0-100
     if (val !== "" && (isNaN(Number(val)) || Number(val) < 0 || Number(val) > 100)) return;
-    setForm((f) => ({ ...f, [key]: val }));
+    setForm((f) => ({ ...f, [taskId]: val }));
     if (status !== "idle") setStatus("idle");
   }
 
   function handleSave() {
     startTransition(async () => {
       try {
+        const details = Object.entries(form).map(([taskIdStr, valStr]) => ({
+          taskId: Number(taskIdStr),
+          nilai: valStr === "" ? null : Number(valStr),
+        }));
+
         const res = await fetch("/api/guru/nilai", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: student.id, subjectId: subject?.id, ...form }),
+          body: JSON.stringify({
+            studentId: student.id,
+            subjectId: subject?.id,
+            details,
+          }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) throw new Error(json.error ?? "Gagal menyimpan nilai.");
@@ -226,32 +206,25 @@ function EditModal({
         {/* Form */}
         <div className="px-6 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
           <div className="grid grid-cols-2 gap-3">
-            {komponen.map((k) => {
-              const activeKey = k.key.replace("nilai", "active");
-              const weightKey = k.key.replace("nilai", "weight");
-              const isActive = subject ? subject[activeKey as keyof SubjectWithWeights] : true;
-              const weight = subject ? subject[weightKey as keyof SubjectWithWeights] : 0;
-
-              if (!isActive) return null;
-
+            {tasks.map((t) => {
               return (
-                <div key={k.key}>
+                <div key={t.id}>
                   <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center justify-between">
                     <span>
-                      {k.label} <span className="text-slate-600 font-normal ml-1">({k.desc})</span>
+                      {t.nama}
                     </span>
                     <span className="text-xs text-indigo-400 font-semibold bg-indigo-500/10 px-1.5 py-0.5 rounded">
-                      {weight}%
+                      {t.bobot}%
                     </span>
                   </label>
                   <input
-                    id={`input-${k.key}`}
+                    id={`input-task-${t.id}`}
                     type="number"
                     min={0}
                     max={100}
                     placeholder="—"
-                    value={form[k.key]}
-                    onChange={(e) => handleChange(k.key, e.target.value)}
+                    value={form[t.id] ?? ""}
+                    onChange={(e) => handleChange(t.id, e.target.value)}
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm
                       placeholder:text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40
                       tabular-nums transition-all"
@@ -357,14 +330,7 @@ export default function NilaiClientPage({
   }, [initialStudents]);
 
   const activeSubject = subjects.find((s) => s.id === activeSubjectId);
-  const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;
-  const komponen = getKomponen(isRpl);
-
-  // Filter komponen yang aktif saja untuk ditunjukkan di tabel
-  const activeKomponen = komponen.filter((k) => {
-    const activeKey = k.key.replace("nilai", "active");
-    return activeSubject ? activeSubject[activeKey as keyof SubjectWithWeights] : true;
-  });
+  const activeKomponen = activeSubject ? activeSubject.tasks.filter((t) => t.isActive) : [];
 
   function handleSaved(studentId: number, newGrade: GradeData) {
     setStudents((prev) =>
@@ -435,7 +401,8 @@ export default function NilaiClientPage({
       };
 
       activeKomponen.forEach((k) => {
-        row[k.label] = g ? (g[k.key as KomponenKey] ?? "—") : "—";
+        const detail = g?.details?.find((d) => d.taskId === k.id);
+        row[k.nama] = detail && detail.nilai != null ? detail.nilai : "—";
       });
 
       row["Rata-rata"] = g?.rataRata ?? "—";
@@ -512,7 +479,6 @@ export default function NilaiClientPage({
       {editStudent && (
         <EditModal
           student={editStudent}
-          isRpl={isRpl}
           subject={activeSubject}
           onClose={() => setEditStudent(null)}
           onSaved={handleSaved}
@@ -522,7 +488,6 @@ export default function NilaiClientPage({
       {isBobotOpen && activeSubject && (
         <BobotModal
           subject={activeSubject}
-          isRpl={isRpl}
           onClose={() => setIsBobotOpen(false)}
           onSaved={(updated) => {
             setSubjects((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
@@ -664,18 +629,14 @@ export default function NilaiClientPage({
                     {sortField === "nama" && (sortOrder === "asc" ? " ▲" : " ▼")}
                   </div>
                 </th>
-                {activeKomponen.map((k) => {
-                  const weightKey = k.key.replace("nilai", "weight");
-                  const weight = activeSubject ? activeSubject[weightKey as keyof SubjectWithWeights] : 10;
-                  return (
-                    <th key={k.key} className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      <div className="flex flex-col items-center">
-                        <span>{k.label}</span>
-                        <span className="text-[9px] text-indigo-400 font-normal lowercase">({weight}%)</span>
-                      </div>
-                    </th>
-                  );
-                })}
+                {activeKomponen.map((k) => (
+                  <th key={k.id} className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    <div className="flex flex-col items-center">
+                      <span>{k.nama}</span>
+                      <span className="text-[9px] text-indigo-400 font-normal lowercase">({k.bobot}%)</span>
+                    </div>
+                  </th>
+                ))}
                 <th
                   onClick={() => handleSort("rataRata")}
                   className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400 cursor-pointer hover:bg-slate-800 hover:text-white transition-colors"
@@ -709,9 +670,10 @@ export default function NilaiClientPage({
                       <div className="text-slate-200 font-medium text-sm">{s.nama}</div>
                       <div className="text-slate-600 text-[11px]">{s.nis}</div>
                     </td>
-                    {activeKomponen.map((k) => (
-                      <Cell key={k.key} nilai={g ? (g[k.key as KomponenKey] as number | null) : null} />
-                    ))}
+                    {activeKomponen.map((k) => {
+                      const detail = g?.details?.find((d) => d.taskId === k.id);
+                      return <Cell key={k.id} nilai={detail ? detail.nilai : null} />;
+                    })}
                     <td className="px-3 py-2.5 text-center text-xs font-semibold text-slate-400 tabular-nums">
                       {g?.rataRata?.toFixed(1) ?? "—"}
                     </td>

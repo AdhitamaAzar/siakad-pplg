@@ -1,8 +1,8 @@
 // =============================================================================
 // FILE: app/guru/nilai/page.tsx
 // TUJUAN: Server Component wrapper untuk halaman rekap nilai guru.
-//         Mengambil data dari DB (Prisma), lalu render NilaiClientPage
-//         yang menangani interaksi input/edit nilai.
+//         Mengambil data dari DB (Prisma), lalu render NilaiClientPage.
+//         Menggunakan sistem dinamis Task + GradeDetail.
 // =============================================================================
 
 import type { Metadata } from "next";
@@ -10,7 +10,6 @@ import prisma from "@/lib/prisma";
 import NilaiClientPage from "./NilaiClientPage";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-
 import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata: Metadata = { title: "Rekap Nilai — Guru" };
@@ -36,35 +35,30 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
 
   const activeKelasId = sp.kelas ? Number(sp.kelas) : kelasList[0]?.id;
 
+  // Ambil subject beserta tasks-nya (sistem dinamis)
   const subjectsList = await prisma.subject.findMany({
     orderBy: { namaMapel: "asc" },
     select: {
       id: true,
       namaMapel: true,
       kodeMapel: true,
-      weightGithub: true,
-      weightApi: true,
-      weightAdminPanel: true,
-      weightLandingPage: true,
-      weightKagglePython: true,
-      weightKaggleSql: true,
-      weightKaggleMl: true,
-      weightUjianMl: true,
-      weightUjianSql: true,
-      activeGithub: true,
-      activeApi: true,
-      activeAdminPanel: true,
-      activeLandingPage: true,
-      activeKagglePython: true,
-      activeKaggleSql: true,
-      activeKaggleMl: true,
-      activeUjianMl: true,
-      activeUjianSql: true,
+      tingkat: true,
+      tasks: {
+        orderBy: { urutan: "asc" },
+        select: {
+          id: true,
+          nama: true,
+          bobot: true,
+          isActive: true,
+          urutan: true,
+        },
+      },
     },
   });
 
   const activeSubjectId = sp.mapel ? Number(sp.mapel) : subjectsList[0]?.id;
 
+  // Ambil siswa + grade + grade details (sistem dinamis)
   const students = await prisma.student.findMany({
     where: { kelasId: activeKelasId },
     orderBy: { nama: "asc" },
@@ -80,19 +74,20 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
         },
         take: 1,
         select: {
-          nilaiGithub: true,
-          nilaiApi: true,
-          nilaiAdminPanel: true,
-          nilaiLandingPage: true,
-          nilaiKagglePython: true,
-          nilaiKaggleSql: true,
-          nilaiKaggleMl: true,
-          nilaiUjianMl: true,
-          nilaiUjianSql: true,
+          id: true,
           rataRata: true,
           nilaiRaport: true,
           predikat: true,
+          statusTuntas: true,
+          jumlahNilaiKosong: true,
+          persentaseMaju: true,
           subjectId: true,
+          details: {
+            select: {
+              taskId: true,
+              nilai: true,
+            },
+          },
         },
       },
     },

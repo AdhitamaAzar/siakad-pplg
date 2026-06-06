@@ -1,17 +1,16 @@
 // =============================================================================
 // FILE: app/api/guru/bobot/route.ts
-// TUJUAN: API Endpoint untuk mengelola bobot penilaian dan status aktif kolom
-//         per mata pelajaran (Subject).
-//         - GET : Ambil bobot & status kolom berdasarkan subjectId
-//         - POST: Simpan bobot baru & re-kalkulasi semua nilai terkait di DB
+// TUJUAN: API Endpoint untuk mengelola bobot dan status aktif Task per Subject.
+//         - GET : Ambil tasks (beserta bobot & isActive) berdasarkan subjectId
+//         - POST: Simpan bobot baru per Task, lalu re-kalkulasi semua Grade terkait
 // =============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { hitungWeightedGrade, KOMPONEN_CONFIG } from "@/lib/gradeCalc";
+import { hitungGradeDari } from "@/lib/gradeCalc";
 
-// GET: Ambil data bobot dan kolom aktif untuk suatu mata pelajaran
+// GET: Ambil tasks beserta bobot dan status aktif untuk suatu mata pelajaran
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user || !["guru", "admin"].includes(session.user.role)) {
@@ -27,19 +26,24 @@ export async function GET(req: NextRequest) {
   try {
     const subject = await prisma.subject.findUnique({
       where: { id: subjectId },
+      include: {
+        tasks: {
+          orderBy: { urutan: "asc" },
+        },
+      },
     });
 
     if (!subject) {
       return NextResponse.json({ error: "Mata pelajaran tidak ditemukan." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, subject });
+    return NextResponse.json({ ok: true, subject, tasks: subject.tasks });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// POST: Perbarui bobot dan kolom aktif, lalu re-kalkulasi semua Grade
+// POST: Perbarui bobot dan status aktif tasks, lalu re-kalkulasi semua Grade
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user || !["guru", "admin"].includes(session.user.role)) {
@@ -54,57 +58,65 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "subjectId wajib diisi." }, { status: 400 });
     }
 
-    // Ambil data bobot dan active status dari request body
-    const updateData: any = {};
-    let totalWeight = 0;
+    // body.tasks = [{ id: number, bobot: number, isActive: boolean }, ...]
+    const tasksUpdate: { id: number; bobot: number; isActive: boolean }[] =
+      body.tasks || [];
 
-    for (const comp of KOMPONEN_CONFIG) {
-      const activeVal = body[comp.activeKey];
-      const weightVal = Number(body[comp.weightKey]);
-
-      updateData[comp.activeKey] = activeVal === true || activeVal === "true";
-      updateData[comp.weightKey] = isNaN(weightVal) ? 0 : weightVal;
-
-      // Hitung total bobot dari kolom yang diaktifkan
-      if (updateData[comp.activeKey]) {
-        totalWeight += updateData[comp.weightKey];
-      }
+    if (tasksUpdate.length === 0) {
+      return NextResponse.json({ error: "Data tasks wajib diisi." }, { status: 400 });
     }
 
-    // Validasi total bobot kolom aktif harus 100%
-    if (totalWeight !== 100) {
+    // Validasi total bobot dari task yang aktif harus 100
+    const totalBobot = tasksUpdate
+      .filter((t) => t.isActive)
+      .reduce((sum, t) => sum + Number(t.bobot), 0);
+
+    if (Math.round(totalBobot) !== 100) {
       return NextResponse.json(
-        { error: `Total bobot kolom aktif harus 100%. Total saat ini: ${totalWeight}%` },
+        { error: `Total bobot task aktif harus 100%. Total saat ini: ${totalBobot}%` },
         { status: 400 }
       );
     }
 
-    // Update model Subject di DB
-    const updatedSubject = await prisma.subject.update({
-      where: { id: subjectId },
-      data: updateData,
-    });
+    // Update bobot dan isActive setiap task
+    await Promise.all(
+      tasksUpdate.map((t) =>
+        prisma.task.update({
+          where: { id: t.id },
+          data: {
+            bobot: Number(t.bobot),
+            isActive: Boolean(t.isActive),
+          },
+        })
+      )
+    );
 
-    // Cari seluruh Grade yang berasosiasi dengan mata pelajaran ini
-    const grades = await prisma.grade.findMany({
+    // Ambil semua Task yang sudah diupdate
+    const updatedTasks = await prisma.task.findMany({
       where: { subjectId },
     });
 
-    // Re-kalkulasi seluruh nilai siswa yang ada berdasarkan bobot baru
-    const updatePromises = grades.map(async (grade) => {
-      const gradeInput = {
-        nilaiGithub: grade.nilaiGithub,
-        nilaiApi: grade.nilaiApi,
-        nilaiAdminPanel: grade.nilaiAdminPanel,
-        nilaiLandingPage: grade.nilaiLandingPage,
-        nilaiKagglePython: grade.nilaiKagglePython,
-        nilaiKaggleSql: grade.nilaiKaggleSql,
-        nilaiKaggleMl: grade.nilaiKaggleMl,
-        nilaiUjianMl: grade.nilaiUjianMl,
-        nilaiUjianSql: grade.nilaiUjianSql,
-      };
+    // Ambil semua Grade yang berkaitan dengan subject ini beserta GradeDetail-nya
+    const grades = await prisma.grade.findMany({
+      where: { subjectId },
+      include: {
+        details: true,
+      },
+    });
 
-      const calc = hitungWeightedGrade(gradeInput, updatedSubject);
+    // Re-kalkulasi nilai setiap siswa berdasarkan bobot baru
+    const updatePromises = grades.map(async (grade) => {
+      const detailInputs = updatedTasks.map((task) => {
+        const detail = grade.details.find((d) => d.taskId === task.id);
+        return {
+          taskId: task.id,
+          nilai: detail?.nilai ?? null,
+          bobot: task.bobot,
+          isActive: task.isActive,
+        };
+      });
+
+      const calc = hitungGradeDari(detailInputs);
 
       return prisma.grade.update({
         where: { id: grade.id },
@@ -124,7 +136,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      subject: updatedSubject,
+      tasks: updatedTasks,
       recalculatedCount: grades.length,
     });
   } catch (err: any) {

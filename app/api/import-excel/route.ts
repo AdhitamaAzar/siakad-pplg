@@ -14,7 +14,7 @@ import { z }                         from "zod";
 import prisma                         from "@/lib/prisma";
 import { auth }                       from "@/lib/auth";
 import bcrypt                         from "bcryptjs";
-import { hitungWeightedGrade }        from "@/lib/gradeCalc";
+import { hitungGradeDari }            from "@/lib/gradeCalc";
 import { getActiveAcademicConfig }   from "@/lib/academicConfig";
 
 // ── KONSTANTA ─────────────────────────────────────────────────────────────────
@@ -684,24 +684,76 @@ export async function POST(req: NextRequest) {
               },
             });
 
-            const gradeInput = {
-              nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : (existingGrade?.nilaiGithub ?? null),
-              nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : (existingGrade?.nilaiApi ?? null),
-              nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : (existingGrade?.nilaiAdminPanel ?? null),
-              nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : (existingGrade?.nilaiLandingPage ?? null),
-              nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : (existingGrade?.nilaiKagglePython ?? null),
-              nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : (existingGrade?.nilaiKaggleSql ?? null),
-              nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : (existingGrade?.nilaiKaggleMl ?? null),
-              nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : (existingGrade?.nilaiUjianMl ?? null),
-              nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : (existingGrade?.nilaiUjianSql ?? null),
+            // Ambil tasks aktif untuk subject ini
+            const subjectTasks = await tx.task.findMany({
+              where: { subjectId: targetSubjectId },
+              orderBy: { urutan: "asc" },
+            });
+
+            // Nilai dari Excel berdasarkan nama kolom task (matching by nama)
+            const nilaiDariExcel: Record<string, number | null> = {
+              github:       numOrNull(row.nilai.github),
+              api:          numOrNull(row.nilai.api),
+              adminpanel:   numOrNull(row.nilai.adminPanel),
+              landingpage:  numOrNull(row.nilai.landingPage),
+              kagglepython: numOrNull(row.nilai.kagglePython),
+              kagglesql:    numOrNull(row.nilai.kaggleSql),
+              kaggleml:     numOrNull(row.nilai.kaggleMl),
+              ujianml:      numOrNull(row.nilai.ujianMl),
+              ujiansql:     numOrNull(row.nilai.ujianSql),
             };
 
-            const calc = hitungWeightedGrade(gradeInput, subject);
-
-            // Re-kalkulasi nilaiHasil dan nilaiRaport dengan TA1
+            // Upsert Grade terlebih dahulu untuk mendapatkan gradeId
             const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
             const ta2 = existingGrade?.nilaiTa2 ?? 0;
+            const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
 
+            let gradeId: number;
+            if (existingGrade) {
+              gradeId = existingGrade.id;
+            } else {
+              const newGrade = await tx.grade.create({
+                data: {
+                  studentId: student.id,
+                  subjectId: targetSubjectId,
+                  semester,
+                  tahunAjaran,
+                  persentaseHadir: finalPersentaseHadir,
+                  nilaiTa1: ta1 > 0 ? ta1 : null,
+                },
+              });
+              gradeId = newGrade.id;
+            }
+
+            // Upsert GradeDetail per task
+            for (const task of subjectTasks) {
+              const taskKey = task.nama.toLowerCase().replace(/[^a-z0-9]/g, "");
+              const nilaiTask = nilaiDariExcel[taskKey] ?? null;
+              if (nilaiTask !== null) {
+                await tx.gradeDetail.upsert({
+                  where: { gradeId_taskId: { gradeId, taskId: task.id } },
+                  update: { nilai: nilaiTask },
+                  create: { gradeId, taskId: task.id, nilai: nilaiTask },
+                });
+              }
+            }
+
+            // Ambil semua detail terbaru untuk kalkulasi
+            const allDetails = await tx.gradeDetail.findMany({
+              where: { gradeId },
+              include: { task: true },
+            });
+
+            const calc = hitungGradeDari(
+              allDetails.map((d) => ({
+                taskId: d.taskId,
+                nilai: d.nilai,
+                bobot: d.task.bobot,
+                isActive: d.task.isActive,
+              }))
+            );
+
+            // Gabungkan dengan TA1/TA2
             const listFinal = [];
             if (calc.rataRata !== null) listFinal.push(calc.rataRata);
             if (ta1 > 0) listFinal.push(ta1);
@@ -712,10 +764,7 @@ export async function POST(req: NextRequest) {
             const predikat = hitungPredikat(nilaiRaport);
             const statusTuntas = nilaiRaport !== null ? (nilaiRaport >= 75 ? "TUNTAS" : "BELUM") : null;
 
-            const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
-
             const gradeData = {
-              ...gradeInput,
               rataRata:           calc.rataRata,
               nilaiTa1:           ta1 > 0 ? ta1 : null,
               persentaseHadir:    finalPersentaseHadir,
@@ -723,6 +772,7 @@ export async function POST(req: NextRequest) {
               nilaiRaport,
               predikat,
               jumlahNilaiKosong:  calc.jumlahNilaiKosong,
+              persentaseMaju:     calc.persentaseMaju,
               statusTuntas,
             };
 
@@ -1109,23 +1159,74 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          const gradeInput = {
-            nilaiGithub:        row.nilai.github !== undefined ? numOrNull(row.nilai.github) : (existingGrade?.nilaiGithub ?? null),
-            nilaiApi:           row.nilai.api !== undefined ? numOrNull(row.nilai.api) : (existingGrade?.nilaiApi ?? null),
-            nilaiAdminPanel:    row.nilai.adminPanel !== undefined ? numOrNull(row.nilai.adminPanel) : (existingGrade?.nilaiAdminPanel ?? null),
-            nilaiLandingPage:   row.nilai.landingPage !== undefined ? numOrNull(row.nilai.landingPage) : (existingGrade?.nilaiLandingPage ?? null),
-            nilaiKagglePython:  row.nilai.kagglePython !== undefined ? numOrNull(row.nilai.kagglePython) : (existingGrade?.nilaiKagglePython ?? null),
-            nilaiKaggleSql:     row.nilai.kaggleSql !== undefined ? numOrNull(row.nilai.kaggleSql) : (existingGrade?.nilaiKaggleSql ?? null),
-            nilaiKaggleMl:      row.nilai.kaggleMl !== undefined ? numOrNull(row.nilai.kaggleMl) : (existingGrade?.nilaiKaggleMl ?? null),
-            nilaiUjianMl:       row.nilai.ujianMl !== undefined ? numOrNull(row.nilai.ujianMl) : (existingGrade?.nilaiUjianMl ?? null),
-            nilaiUjianSql:      row.nilai.ujianSql !== undefined ? numOrNull(row.nilai.ujianSql) : (existingGrade?.nilaiUjianSql ?? null),
+          // Ambil tasks aktif untuk subject ini
+          const subjectTasks2 = await tx.task.findMany({
+            where: { subjectId: subject.id },
+            orderBy: { urutan: "asc" },
+          });
+
+          // Nilai dari Excel berdasarkan nama task
+          const nilaiDariExcel2: Record<string, number | null> = {
+            github:       numOrNull(row.nilai.github),
+            api:          numOrNull(row.nilai.api),
+            adminpanel:   numOrNull(row.nilai.adminPanel),
+            landingpage:  numOrNull(row.nilai.landingPage),
+            kagglepython: numOrNull(row.nilai.kagglePython),
+            kagglesql:    numOrNull(row.nilai.kaggleSql),
+            kaggleml:     numOrNull(row.nilai.kaggleMl),
+            ujianml:      numOrNull(row.nilai.ujianMl),
+            ujiansql:     numOrNull(row.nilai.ujianSql),
           };
 
-          const calc = hitungWeightedGrade(gradeInput, subject);
-
-          // Re-kalkulasi nilaiHasil dan nilaiRaport dengan TA1
           const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
           const ta2 = existingGrade?.nilaiTa2 ?? 0;
+          const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
+
+          // Upsert Grade
+          let gradeId2: number;
+          if (existingGrade) {
+            gradeId2 = existingGrade.id;
+          } else {
+            const newGrade2 = await tx.grade.create({
+              data: {
+                studentId: student.id,
+                subjectId: subject.id,
+                semester,
+                tahunAjaran,
+                persentaseHadir: finalPersentaseHadir,
+                nilaiTa1: ta1 > 0 ? ta1 : null,
+              },
+            });
+            gradeId2 = newGrade2.id;
+          }
+
+          // Upsert GradeDetail per task
+          for (const task of subjectTasks2) {
+            const taskKey = task.nama.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const nilaiTask = nilaiDariExcel2[taskKey] ?? null;
+            if (nilaiTask !== null) {
+              await tx.gradeDetail.upsert({
+                where: { gradeId_taskId: { gradeId: gradeId2, taskId: task.id } },
+                update: { nilai: nilaiTask },
+                create: { gradeId: gradeId2, taskId: task.id, nilai: nilaiTask },
+              });
+            }
+          }
+
+          // Ambil detail terbaru untuk kalkulasi
+          const allDetails2 = await tx.gradeDetail.findMany({
+            where: { gradeId: gradeId2 },
+            include: { task: true },
+          });
+
+          const calc = hitungGradeDari(
+            allDetails2.map((d) => ({
+              taskId: d.taskId,
+              nilai: d.nilai,
+              bobot: d.task.bobot,
+              isActive: d.task.isActive,
+            }))
+          );
 
           const listFinal = [];
           if (calc.rataRata !== null) listFinal.push(calc.rataRata);
@@ -1137,10 +1238,7 @@ export async function POST(req: NextRequest) {
           const predikat = hitungPredikat(nilaiRaport);
           const statusTuntas = nilaiRaport !== null ? (nilaiRaport >= 75 ? "TUNTAS" : "BELUM") : null;
 
-          const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
-
           const gradeData = {
-            ...gradeInput,
             rataRata:           calc.rataRata,
             nilaiTa1:           ta1 > 0 ? ta1 : null,
             persentaseHadir:    finalPersentaseHadir,
@@ -1148,6 +1246,7 @@ export async function POST(req: NextRequest) {
             nilaiRaport,
             predikat,
             jumlahNilaiKosong:  calc.jumlahNilaiKosong,
+            persentaseMaju:     calc.persentaseMaju,
             statusTuntas,
           };
 

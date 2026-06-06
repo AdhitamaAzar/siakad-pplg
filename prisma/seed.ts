@@ -1,10 +1,11 @@
 // =============================================================================
 // FILE: prisma/seed.ts
-// TUJUAN: Mengisi database dengan data awal (seed) yang dibutuhkan sistem:
+// TUJUAN: Mengisi database dengan data awal (seed) yang dibutuhkan sistem secara dinamis:
 //         - 1 akun admin
 //         - 1 akun guru (Fandik Ariyanto, S.ST, NIP 198512012022211025)
 //         - 3 kelas (XI PPLG 1, XI PPLG 2, XI PPLG 3)
 //         - 5 siswa contoh per kelas (total 15 siswa)
+//         - 9 komponen tugas (Tasks) dan detail nilai (GradeDetails) per siswa
 // CARA JALANKAN: npx prisma db seed
 // =============================================================================
 
@@ -65,75 +66,24 @@ const SISWA_DATA: Record<
   ],
 };
 
+const TASKS_DATA = [
+  { nama: "Github", bobot: 10, urutan: 0 },
+  { nama: "API", bobot: 10, urutan: 1 },
+  { nama: "Admin Panel", bobot: 10, urutan: 2 },
+  { nama: "Landing Page", bobot: 10, urutan: 3 },
+  { nama: "Kaggle Python", bobot: 10, urutan: 4 },
+  { nama: "Kaggle SQL", bobot: 10, urutan: 5 },
+  { nama: "Kaggle ML", bobot: 10, urutan: 6 },
+  { nama: "Ujian ML", bobot: 15, urutan: 7 },
+  { nama: "Ujian SQL", bobot: 15, urutan: 8 },
+];
+
 // ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 
-/**
- * Membuat hash password menggunakan bcrypt
- * @param password - Password plaintext yang akan di-hash
- * @returns Promise dengan string hash bcrypt
- */
 async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
 }
 
-/**
- * Membuat data nilai contoh untuk seorang siswa
- * @param studentId - ID siswa di database
- * @param subjectId - ID mata pelajaran di database
- * @returns Objek data nilai yang siap dimasukkan ke database
- */
-function buatNilaiContoh(studentId: number, subjectId: number) {
-  // Generate nilai random yang realistis
-  const randomNilai = (min: number, max: number): number =>
-    Math.floor(Math.random() * (max - min + 1)) + min;
-
-  const komponenNilai = {
-    nilaiGithub: randomNilai(65, 100),
-    nilaiApi: randomNilai(60, 100),
-    nilaiAdminPanel: randomNilai(65, 100),
-    nilaiLandingPage: randomNilai(70, 100),
-    nilaiKagglePython: randomNilai(60, 100),
-    nilaiKaggleSql: randomNilai(55, 100),
-    nilaiKaggleMl: randomNilai(50, 100),
-    nilaiUjianMl: randomNilai(60, 100),
-    nilaiUjianSql: randomNilai(65, 100),
-  };
-
-  const nilaiArray = Object.values(komponenNilai);
-  const rataRata =
-    nilaiArray.reduce((a, b) => a + b, 0) / nilaiArray.length;
-  const nilaiRaport = Math.round(rataRata);
-  const statusTuntas = nilaiRaport >= 75 ? "TUNTAS" : "BELUM";
-  const predikat =
-    nilaiRaport >= 90
-      ? "Sangat Baik"
-      : nilaiRaport >= 75
-      ? "Baik"
-      : nilaiRaport >= 60
-      ? "Cukup"
-      : "Perlu Bimbingan";
-
-  return {
-    studentId,
-    subjectId,
-    semester: SEMESTER,
-    tahunAjaran: TAHUN_AJARAN,
-    ...komponenNilai,
-    rataRata: Math.round(rataRata * 100) / 100,
-    nilaiHasil: nilaiRaport,
-    nilaiRaport,
-    predikat,
-    statusTuntas,
-    jumlahNilaiKosong: 0,
-    persentaseMaju: 100,
-  };
-}
-
-/**
- * Membuat data absensi contoh untuk seorang siswa
- * @param studentId - ID siswa di database
- * @returns Objek data absensi yang siap dimasukkan ke database
- */
 function buatAbsensiContoh(studentId: number) {
   const totalPertemuan = 24;
   const totalHadir = Math.floor(Math.random() * 5) + 20; // 20-24 hadir
@@ -152,11 +102,6 @@ function buatAbsensiContoh(studentId: number) {
 
 // ─── MAIN SEED FUNCTION ───────────────────────────────────────────────────────
 
-/**
- * Fungsi utama seed database
- * Menjalankan semua operasi dalam urutan yang benar dengan dependency yang tepat
- * @throws Error jika terjadi kegagalan saat seed
- */
 async function main(): Promise<void> {
   console.log("🌱 Memulai proses seed database SIAKAD PPLG...\n");
 
@@ -214,6 +159,32 @@ async function main(): Promise<void> {
   });
   console.log(`   ✅ Mapel dibuat: ${defaultSubject.namaMapel} (ID: ${defaultSubject.id})`);
 
+  // ── STEP 1c: Buat Komponen Tugas (Tasks) ────────────────────────────────────
+  console.log("📝 Membuat tugas/komponen penilaian...");
+  const tasksCreated = [];
+  for (const t of TASKS_DATA) {
+    const createdTask = await prisma.task.upsert({
+      where: {
+        subjectId_nama: {
+          subjectId: defaultSubject.id,
+          nama: t.nama,
+        },
+      },
+      update: {
+        bobot: t.bobot,
+        urutan: t.urutan,
+      },
+      create: {
+        subjectId: defaultSubject.id,
+        nama: t.nama,
+        bobot: t.bobot,
+        urutan: t.urutan,
+      },
+    });
+    tasksCreated.push(createdTask);
+  }
+  console.log(`   ✅ Komponen penilaian dibuat (${tasksCreated.length} item)`);
+
   // ── STEP 2: Buat User Admin ────────────────────────────────────────────────
   console.log("\n👤 Membuat akun admin...");
   const adminPassword = await hashPassword("admin123");
@@ -226,7 +197,7 @@ async function main(): Promise<void> {
       roleId: roleAdmin.id,
     },
   });
-  console.log(`   ✅ Admin dibuat: username="admin", password="admin123" (GANTI SETELAH PRODUKSI!)`);
+  console.log(`   ✅ Admin dibuat: username="admin", password="admin123"`);
 
   // ── STEP 3: Buat User Guru (Fandik Ariyanto) ──────────────────────────────
   console.log("\n👨‍🏫 Membuat akun guru Fandik Ariyanto, S.ST...");
@@ -331,7 +302,28 @@ async function main(): Promise<void> {
       });
 
       // Buat data nilai contoh
-      await prisma.grade.upsert({
+      const randomNilai = (min: number, max: number): number =>
+        Math.floor(Math.random() * (max - min + 1)) + min;
+
+      const gradeDetailsToCreate = tasksCreated.map((t) => ({
+        taskId: t.id,
+        nilai: randomNilai(60, 100),
+        bobot: t.bobot,
+      }));
+
+      const weightedSum = gradeDetailsToCreate.reduce((sum, item) => sum + item.nilai * item.bobot, 0);
+      const weightTotal = gradeDetailsToCreate.reduce((sum, item) => sum + item.bobot, 0);
+      const rataRata = weightTotal > 0 ? Math.round((weightedSum / weightTotal) * 10) / 10 : null;
+      const nilaiRaport = rataRata !== null ? Math.round(rataRata) : null;
+      const predikat = nilaiRaport !== null
+        ? nilaiRaport >= 90 ? "Sangat Baik"
+          : nilaiRaport >= 75 ? "Baik"
+          : nilaiRaport >= 60 ? "Cukup"
+          : "Perlu Bimbingan"
+        : null;
+      const statusTuntas = nilaiRaport !== null ? (nilaiRaport >= 75 ? "TUNTAS" : "BELUM") : null;
+
+      const grade = await prisma.grade.upsert({
         where: {
           studentId_subjectId_semester_tahunAjaran: {
             studentId: student.id,
@@ -340,9 +332,49 @@ async function main(): Promise<void> {
             tahunAjaran: TAHUN_AJARAN,
           },
         },
-        update: {},
-        create: buatNilaiContoh(student.id, defaultSubject.id),
+        update: {
+          rataRata,
+          nilaiHasil: nilaiRaport,
+          nilaiRaport,
+          predikat,
+          statusTuntas,
+          jumlahNilaiKosong: 0,
+          persentaseMaju: 100,
+        },
+        create: {
+          studentId: student.id,
+          subjectId: defaultSubject.id,
+          semester: SEMESTER,
+          tahunAjaran: TAHUN_AJARAN,
+          rataRata,
+          nilaiHasil: nilaiRaport,
+          nilaiRaport,
+          predikat,
+          statusTuntas,
+          jumlahNilaiKosong: 0,
+          persentaseMaju: 100,
+        },
       });
+
+      // Insert GradeDetails
+      for (const d of gradeDetailsToCreate) {
+        await prisma.gradeDetail.upsert({
+          where: {
+            gradeId_taskId: {
+              gradeId: grade.id,
+              taskId: d.taskId,
+            },
+          },
+          update: {
+            nilai: d.nilai,
+          },
+          create: {
+            gradeId: grade.id,
+            taskId: d.taskId,
+            nilai: d.nilai,
+          },
+        });
+      }
 
       // Buat data absensi contoh
       await prisma.attendance.upsert({

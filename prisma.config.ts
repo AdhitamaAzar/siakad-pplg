@@ -10,13 +10,18 @@
 import path from "node:path";
 import { defineConfig } from "prisma/config";
 
-// Muat .env secara manual agar tersedia saat prisma CLI berjalan
+// Muat .env.local dan .env secara manual agar tersedia saat prisma CLI berjalan
 import * as dotenv from "dotenv";
-dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
   "postgresql://postgres:postgres@localhost:5432/siakad_pplg";
+
+const DIRECT_URL =
+  process.env.DIRECT_URL ??
+  DATABASE_URL;
 
 // ─── KONFIGURASI PRISMA ───────────────────────────────────────────────────────
 
@@ -34,7 +39,8 @@ export default defineConfig({
 
   datasource: {
     url: DATABASE_URL,
-  },
+    directUrl: DIRECT_URL,
+  } as any,
 
   migrations: {
     seed: "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts",

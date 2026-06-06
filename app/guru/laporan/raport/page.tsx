@@ -1,7 +1,7 @@
 // =============================================================================
 // FILE: app/guru/laporan/raport/page.tsx
 // TUJUAN: Server Component wrapper untuk halaman Cetak Raport Resmi.
-//         Mengambil profil siswa, nilai lengkap, absensi, dan catatan.
+//         Mengambil profil siswa, nilai lengkap (GradeDetail), absensi, dan catatan.
 // =============================================================================
 
 import type { Metadata } from "next";
@@ -9,7 +9,6 @@ import prisma from "@/lib/prisma";
 import RaportClientPage from "./RaportClientPage";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-
 import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
 export const metadata: Metadata = { title: "Cetak Raport Resmi — Guru" };
@@ -63,20 +62,18 @@ export default async function GuruRaportPage({ searchParams }: PageProps) {
         grades: {
           where: { semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
           take: 1,
-          select: {
-            nilaiGithub: true,
-            nilaiApi: true,
-            nilaiAdminPanel: true,
-            nilaiLandingPage: true,
-            nilaiKagglePython: true,
-            nilaiKaggleSql: true,
-            nilaiKaggleMl: true,
-            nilaiUjianMl: true,
-            nilaiUjianSql: true,
-            rataRata: true,
-            nilaiRaport: true,
-            predikat: true,
-            statusTuntas: true,
+          include: {
+            subject: {
+              select: { id: true, namaMapel: true, kodeMapel: true },
+            },
+            details: {
+              include: {
+                task: {
+                  select: { id: true, nama: true, bobot: true, isActive: true, urutan: true },
+                },
+              },
+              orderBy: { task: { urutan: "asc" } },
+            },
           },
         },
         attendances: {

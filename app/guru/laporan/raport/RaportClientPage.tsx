@@ -20,20 +20,34 @@ interface Note {
   nilaiTotal: number | null;
 }
 
+interface TaskItem {
+  id: number;
+  nama: string;
+  bobot: number;
+  isActive: boolean;
+  urutan: number;
+}
+
+interface GradeDetailItem {
+  taskId: number;
+  nilai: number | null;
+  task: TaskItem;
+}
+
+interface SubjectItem {
+  id: number;
+  namaMapel: string;
+  kodeMapel: string;
+}
+
 interface Grade {
-  nilaiGithub: number | null;
-  nilaiApi: number | null;
-  nilaiAdminPanel: number | null;
-  nilaiLandingPage: number | null;
-  nilaiKagglePython: number | null;
-  nilaiKaggleSql: number | null;
-  nilaiKaggleMl: number | null;
-  nilaiUjianMl: number | null;
-  nilaiUjianSql: number | null;
   rataRata: number | null;
   nilaiRaport: number | null;
   predikat: string | null;
   statusTuntas: string | null;
+  nilaiTa1?: number | null;
+  subject?: SubjectItem | null;
+  details?: GradeDetailItem[];
 }
 
 interface Attendance {
@@ -318,33 +332,23 @@ export default function RaportClientPage({
                   </tr>
                   
                   {/* Komponen Rincian Tugas */}
-                  {raportData.grade && (
+                  {raportData.grade && raportData.grade.details && (
                     <>
-                      {[
-                        { name: "Portfolio & Kontribusi GitHub", val: raportData.grade.nilaiGithub },
-                        { name: "Pembuatan & Integrasi Backend API", val: raportData.grade.nilaiApi },
-                        { name: "Pembangunan Web Admin Panel", val: raportData.grade.nilaiAdminPanel },
-                        { name: "Pembuatan Landing Page Interaktif", val: raportData.grade.nilaiLandingPage },
-                        { name: "Sertifikasi Kaggle Intro to Python", val: raportData.grade.nilaiKagglePython },
-                        { name: "Sertifikasi Kaggle Intro to SQL", val: raportData.grade.nilaiKaggleSql },
-                        { name: "Sertifikasi Kaggle Machine Learning", val: raportData.grade.nilaiKaggleMl },
-                        { name: "Ujian Kompetensi Machine Learning", val: raportData.grade.nilaiUjianMl },
-                        { name: "Ujian Kompetensi SQL & Basis Data", val: raportData.grade.nilaiUjianSql },
-                      ].map((item, idx) => (
-                        <tr key={idx} className="bg-slate-950/20 text-slate-400">
+                      {raportData.grade.details.map((detail, idx) => (
+                        <tr key={detail.taskId} className="bg-slate-950/20 text-slate-400">
                           <td className="px-4 py-2 text-center text-[10px] border-r border-slate-850"></td>
                           <td className="px-6 py-2 text-[11px] italic border-r border-slate-850 flex items-center gap-1.5">
                             <span className="w-1 h-1 rounded-full bg-slate-700 shrink-0" />
-                            {item.name}
+                            {detail.task.nama}
                           </td>
                           <td className="px-3 py-2 text-center text-[11px] font-semibold border-r border-slate-850 tabular-nums">
-                            {item.val ?? "—"}
+                            {detail.nilai ?? "—"}
                           </td>
                           <td className="px-3 py-2 text-center text-[10px] border-r border-slate-850">—</td>
                           <td className="px-4 py-2 text-center text-[10px]">
-                            {item.val && item.val >= 75 ? (
+                            {detail.nilai && detail.nilai >= 75 ? (
                               <span className="text-emerald-600">Tuntas</span>
-                            ) : item.val ? (
+                            ) : detail.nilai ? (
                               <span className="text-rose-500">Belum</span>
                             ) : (
                               "—"

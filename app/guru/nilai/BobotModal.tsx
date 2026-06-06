@@ -2,106 +2,81 @@
 
 // =============================================================================
 // FILE: app/guru/nilai/BobotModal.tsx
-// TUJUAN: Modal component untuk konfigurasi bobot penilaian & status aktif kolom.
+// TUJUAN: Modal component untuk konfigurasi bobot penilaian & status aktif Task per Subject.
+//         Sepenuhnya dinamis berdasarkan data Task di DB.
 // =============================================================================
 
 import { useState, useTransition } from "react";
 import { X, Save, Loader2, CheckCircle2, AlertCircle, ToggleLeft, ToggleRight } from "lucide-react";
 
+interface TaskItem {
+  id: number;
+  nama: string;
+  bobot: number;
+  isActive: boolean;
+  urutan: number;
+}
+
 interface SubjectWithWeights {
   id: number;
   namaMapel: string;
   kodeMapel: string;
-  weightGithub: number;
-  weightApi: number;
-  weightAdminPanel: number;
-  weightLandingPage: number;
-  weightKagglePython: number;
-  weightKaggleSql: number;
-  weightKaggleMl: number;
-  weightUjianMl: number;
-  weightUjianSql: number;
-  activeGithub: boolean;
-  activeApi: boolean;
-  activeAdminPanel: boolean;
-  activeLandingPage: boolean;
-  activeKagglePython: boolean;
-  activeKaggleSql: boolean;
-  activeKaggleMl: boolean;
-  activeUjianMl: boolean;
-  activeUjianSql: boolean;
+  tingkat: number;
+  tasks: TaskItem[];
 }
 
 interface Props {
   subject: SubjectWithWeights;
-  isRpl: boolean;
   onClose: () => void;
   onSaved: (updatedSubject: SubjectWithWeights) => void;
 }
 
-const getKomponenMetadata = (isRpl: boolean) => [
-  { key: "Github" as const,      label: isRpl ? "Github" : "Tugas 1",        desc: isRpl ? "Portfolio / Link GitHub" : "Tugas 1" },
-  { key: "Api" as const,         label: isRpl ? "Tugas API" : "Tugas 2",     desc: isRpl ? "Tugas pembuatan API" : "Tugas 2" },
-  { key: "AdminPanel" as const,  label: isRpl ? "Admin Panel" : "Tugas 3",   desc: isRpl ? "Tugas Admin Panel" : "Tugas 3" },
-  { key: "LandingPage" as const, label: isRpl ? "Landing Page" : "Tugas 4",  desc: isRpl ? "Link Landing Page" : "Tugas 4" },
-  { key: "KagglePython" as const,label: isRpl ? "Kaggle Python" : "Tugas 5", desc: isRpl ? "Kaggle Intro to Python" : "Tugas 5" },
-  { key: "KaggleSql" as const,   label: isRpl ? "Kaggle SQL" : "Tugas 6",    desc: isRpl ? "Kaggle Intro to SQL" : "Tugas 6" },
-  { key: "KaggleMl" as const,    label: isRpl ? "Kaggle ML" : "Tugas 7",     desc: isRpl ? "Kaggle Machine Learning" : "Tugas 7" },
-  { key: "UjianMl" as const,     label: isRpl ? "Ujian ML" : "Ujian 1",      desc: isRpl ? "Ujian Online Machine Learning" : "Ujian 1" },
-  { key: "UjianSql" as const,    label: isRpl ? "Ujian SQL" : "Ujian 2",     desc: isRpl ? "Ujian Online SQL" : "Ujian 2" },
-] as const;
-
-export default function BobotModal({ subject, isRpl, onClose, onSaved }: Props) {
-  const metadata = getKomponenMetadata(isRpl);
-
-  // States
-  const [form, setForm] = useState(() => {
-    const initial: Record<string, any> = {};
-    for (const item of metadata) {
-      const activeKey = `active${item.key}`;
-      const weightKey = `weight${item.key}`;
-      initial[activeKey] = subject[activeKey as keyof SubjectWithWeights];
-      initial[weightKey] = subject[weightKey as keyof SubjectWithWeights];
-    }
-    return initial;
-  });
+export default function BobotModal({ subject, onClose, onSaved }: Props) {
+  // Local state for tasks list
+  const [tasks, setTasks] = useState<TaskItem[]>(() => [...subject.tasks]);
 
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "ok" | "err">("idle");
   const [errMsg, setErrMsg] = useState("");
 
-  // Hitung total bobot kolom aktif
-  const totalBobot = metadata.reduce((sum, item) => {
-    const activeKey = `active${item.key}`;
-    const weightKey = `weight${item.key}`;
-    return form[activeKey] ? sum + (Number(form[weightKey]) || 0) : sum;
+  // Hitung total bobot dari task yang aktif saja
+  const totalBobot = tasks.reduce((sum, t) => {
+    return t.isActive ? sum + t.bobot : sum;
   }, 0);
 
-  const isValid = totalBobot === 100;
+  const isValid = Math.round(totalBobot) === 100;
 
-  function handleToggle(key: string) {
-    const activeKey = `active${key}`;
-    const weightKey = `weight${key}`;
-    setForm((prev) => {
-      const nextActive = !prev[activeKey];
-      return {
-        ...prev,
-        [activeKey]: nextActive,
-        // Jika dinonaktifkan, set bobot ke 0, jika diaktifkan set default ke 10 atau pertahankan bobot lama
-        [weightKey]: nextActive ? (prev[weightKey] || 10) : 0,
-      };
-    });
+  function handleToggle(taskId: number) {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id === taskId) {
+          const nextActive = !t.isActive;
+          return {
+            ...t,
+            isActive: nextActive,
+            bobot: nextActive ? (t.bobot || 10) : 0,
+          };
+        }
+        return t;
+      })
+    );
     if (status !== "idle") setStatus("idle");
   }
 
-  function handleWeightChange(key: string, value: string) {
-    const weightKey = `weight${key}`;
+  function handleWeightChange(taskId: number, value: string) {
     const num = Number(value);
     if (value !== "" && (isNaN(num) || num < 0 || num > 100)) return;
-    setForm((prev) => ({
-      ...prev,
-      [weightKey]: value === "" ? "" : num,
-    }));
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            bobot: value === "" ? 0 : num,
+          };
+        }
+        return t;
+      })
+    );
     if (status !== "idle") setStatus("idle");
   }
 
@@ -111,7 +86,11 @@ export default function BobotModal({ subject, isRpl, onClose, onSaved }: Props) 
       try {
         const payload = {
           subjectId: subject.id,
-          ...form,
+          tasks: tasks.map((t) => ({
+            id: t.id,
+            bobot: t.bobot,
+            isActive: t.isActive,
+          })),
         };
 
         const res = await fetch("/api/guru/bobot", {
@@ -126,7 +105,12 @@ export default function BobotModal({ subject, isRpl, onClose, onSaved }: Props) 
         }
 
         setStatus("ok");
-        onSaved(json.subject);
+        // Reconstruct the updated subject structure
+        const updatedSubject: SubjectWithWeights = {
+          ...subject,
+          tasks: json.tasks,
+        };
+        onSaved(updatedSubject);
         setTimeout(onClose, 800);
       } catch (err: any) {
         setStatus("err");
@@ -159,78 +143,72 @@ export default function BobotModal({ subject, isRpl, onClose, onSaved }: Props) 
         {/* Content */}
         <div className="px-6 py-4 overflow-y-auto space-y-4 flex-1">
           <p className="text-slate-400 text-xs leading-relaxed">
-            Aktifkan kolom nilai yang Anda gunakan semester ini dan tentukan persentase bobotnya. 
-            Averages, reports, and grades will automatically recalculate. 
-            <span className="text-indigo-400 font-semibold block mt-1">Total bobot kolom aktif harus tepat 100%.</span>
+            Aktifkan komponen nilai yang digunakan semester ini dan tentukan persentase bobotnya.
+            Rata-rata, raport, dan predikat nilai siswa akan otomatis dihitung ulang.
+            <span className="text-indigo-400 font-semibold block mt-1">Total bobot komponen aktif harus tepat 100%.</span>
           </p>
 
           <div className="space-y-2 border border-slate-800 rounded-xl p-2 bg-slate-950/40">
-            {metadata.map((item) => {
-              const activeKey = `active${item.key}`;
-              const weightKey = `weight${item.key}`;
-              const isActive = form[activeKey];
-
-              return (
-                <div 
-                  key={item.key} 
-                  className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                    isActive 
-                      ? "bg-slate-800/40 border-slate-700/60" 
-                      : "bg-slate-900/20 border-slate-800/40 opacity-60"
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleToggle(item.key)}
-                      className="text-slate-400 hover:text-indigo-400 transition-colors mt-0.5 focus:outline-none"
-                    >
-                      {isActive ? (
-                        <ToggleRight size={28} className="text-indigo-400" />
-                      ) : (
-                        <ToggleLeft size={28} className="text-slate-600" />
-                      )}
-                    </button>
-                    <div>
-                      <span className="text-slate-200 font-semibold text-sm block">
-                        {item.label}
-                      </span>
-                      <span className="text-slate-500 text-xs block">
-                        {item.desc}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 font-medium">Bobot:</span>
-                    <div className="relative flex items-center w-20">
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        placeholder="0"
-                        disabled={!isActive}
-                        value={form[weightKey]}
-                        onChange={(e) => handleWeightChange(item.key, e.target.value)}
-                        className={`w-full px-2 py-1.5 bg-slate-950 border rounded-lg text-sm text-center font-semibold tabular-nums focus:outline-none transition-all ${
-                          isActive
-                            ? "border-slate-700 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                            : "border-slate-800 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
-                      <span className="absolute right-2 text-xs text-slate-500">%</span>
-                    </div>
+            {tasks.map((t) => (
+              <div
+                key={t.id}
+                className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                  t.isActive
+                    ? "bg-slate-800/40 border-slate-700/60"
+                    : "bg-slate-900/20 border-slate-800/40 opacity-60"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleToggle(t.id)}
+                    className="text-slate-400 hover:text-indigo-400 transition-colors mt-0.5 focus:outline-none"
+                  >
+                    {t.isActive ? (
+                      <ToggleRight size={28} className="text-indigo-400" />
+                    ) : (
+                      <ToggleLeft size={28} className="text-slate-600" />
+                    )}
+                  </button>
+                  <div>
+                    <span className="text-slate-200 font-semibold text-sm block">
+                      {t.nama}
+                    </span>
+                    <span className="text-slate-500 text-xs block">
+                      Komponen Penilaian {t.nama}
+                    </span>
                   </div>
                 </div>
-              );
-            })}
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-medium">Bobot:</span>
+                  <div className="relative flex items-center w-20">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="0"
+                      disabled={!t.isActive}
+                      value={t.bobot === 0 ? "" : t.bobot}
+                      onChange={(e) => handleWeightChange(t.id, e.target.value)}
+                      className={`w-full px-2 py-1.5 bg-slate-950 border rounded-lg text-sm text-center font-semibold tabular-nums focus:outline-none transition-all ${
+                        t.isActive
+                          ? "border-slate-700 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                          : "border-slate-800 text-slate-600 cursor-not-allowed"
+                      }`}
+                    />
+                    <span className="absolute right-2 text-xs text-slate-500">%</span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Real-time Indicator & Alerts */}
         <div className="px-6 py-3 border-t border-slate-800 bg-slate-950/20 flex-shrink-0 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-slate-400 text-xs font-semibold">Total Bobot Kolom Aktif:</span>
+            <span className="text-slate-400 text-xs font-semibold">Total Bobot Komponen Aktif:</span>
             <span className={`text-base font-extrabold tabular-nums ${isValid ? "text-emerald-400" : "text-amber-400"}`}>
               {totalBobot}%
             </span>

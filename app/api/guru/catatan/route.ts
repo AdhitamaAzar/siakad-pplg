@@ -38,24 +38,25 @@ async function syncGradeTa1(studentId: number, nilaiTa1: number | null) {
 
   const grade = await prisma.grade.findFirst({
     where: { studentId, semester: SEMESTER, tahunAjaran: TAHUN_AJARAN },
+    include: {
+      details: {
+        include: {
+          task: true,
+        },
+      },
+    },
   });
 
   if (grade) {
-    // Re-kalkulasi nilaiHasil dan nilaiRaport jika diperlukan
-    const github = grade.nilaiGithub ?? 0;
-    const api = grade.nilaiApi ?? 0;
-    const admin = grade.nilaiAdminPanel ?? 0;
-    const landing = grade.nilaiLandingPage ?? 0;
-    const py = grade.nilaiKagglePython ?? 0;
-    const sql = grade.nilaiKaggleSql ?? 0;
-    const ml = grade.nilaiKaggleMl ?? 0;
-    const uml = grade.nilaiUjianMl ?? 0;
-    const usql = grade.nilaiUjianSql ?? 0;
+    // Hitung rata-rata dari GradeDetail yang aktif
+    const activeDetails = grade.details.filter((d) => d.task.isActive);
+    const filledDetails = activeDetails.filter((d) => d.nilai !== null);
+    const avgTugas =
+      filledDetails.length > 0
+        ? filledDetails.reduce((sum, d) => sum + (d.nilai ?? 0), 0) / filledDetails.length
+        : 0;
 
-    const listTugas = [github, api, admin, landing, py, sql, ml, uml, usql].filter((v) => v > 0);
-    const avgTugas = listTugas.length ? listTugas.reduce((a, b) => a + b, 0) / listTugas.length : 0;
-    
-    // Gabungan tugas + TA1 + TA2
+    // Gabungkan rata-rata tugas + TA1 + TA2
     const ta1 = nilaiTa1;
     const ta2 = grade.nilaiTa2 ?? 0;
 
