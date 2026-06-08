@@ -159,31 +159,7 @@ async function main(): Promise<void> {
   });
   console.log(`   ✅ Mapel dibuat: ${defaultSubject.namaMapel} (ID: ${defaultSubject.id})`);
 
-  // ── STEP 1c: Buat Komponen Tugas (Tasks) ────────────────────────────────────
-  console.log("📝 Membuat tugas/komponen penilaian...");
-  const tasksCreated = [];
-  for (const t of TASKS_DATA) {
-    const createdTask = await prisma.task.upsert({
-      where: {
-        subjectId_nama: {
-          subjectId: defaultSubject.id,
-          nama: t.nama,
-        },
-      },
-      update: {
-        bobot: t.bobot,
-        urutan: t.urutan,
-      },
-      create: {
-        subjectId: defaultSubject.id,
-        nama: t.nama,
-        bobot: t.bobot,
-        urutan: t.urutan,
-      },
-    });
-    tasksCreated.push(createdTask);
-  }
-  console.log(`   ✅ Komponen penilaian dibuat (${tasksCreated.length} item)`);
+  let tasksCreated: any[] = [];
 
   // ── STEP 2: Buat User Admin ────────────────────────────────────────────────
   console.log("\n👤 Membuat akun admin...");
@@ -223,6 +199,33 @@ async function main(): Promise<void> {
     },
   });
   console.log(`   ✅ Guru dibuat: username="fandik.ariyanto", NIP="${teacher.nip}"`);
+
+  // ── STEP 1c: Buat Komponen Tugas (Tasks) ────────────────────────────────────
+  console.log("📝 Membuat tugas/komponen penilaian...");
+  for (const t of TASKS_DATA) {
+    const createdTask = await prisma.task.upsert({
+      where: {
+        subjectId_teacherId_nama: {
+          subjectId: defaultSubject.id,
+          teacherId: teacher.id,
+          nama: t.nama,
+        },
+      },
+      update: {
+        bobot: t.bobot,
+        urutan: t.urutan,
+      },
+      create: {
+        subjectId: defaultSubject.id,
+        teacherId: teacher.id,
+        nama: t.nama,
+        bobot: t.bobot,
+        urutan: t.urutan,
+      },
+    });
+    tasksCreated.push(createdTask);
+  }
+  console.log(`   ✅ Komponen penilaian dibuat (${tasksCreated.length} item)`);
 
   // ── STEP 4: Buat 3 Kelas ──────────────────────────────────────────────────
   console.log("\n🏫 Membuat 3 kelas PPLG...");

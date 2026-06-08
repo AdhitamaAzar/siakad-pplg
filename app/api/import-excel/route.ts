@@ -37,17 +37,7 @@ const RowSchema = z.object({
   no:    z.union([z.number(), z.string()]).optional(),
   nis:   z.string().optional().nullable().transform((v) => v ?? ""),
   nama:  z.string().min(1, "Nama kosong"),
-  nilai: z.object({
-    github:       NilaiOptional,
-    api:          NilaiOptional,
-    adminPanel:   NilaiOptional,
-    landingPage:  NilaiOptional,
-    kagglePython: NilaiOptional,
-    kaggleSql:    NilaiOptional,
-    kaggleMl:     NilaiOptional,
-    ujianMl:      NilaiOptional,
-    ujianSql:     NilaiOptional,
-  }),
+  nilai: z.record(z.string(), NilaiOptional),
 });
 
 type ParsedRow = z.infer<typeof RowSchema>;
@@ -315,7 +305,7 @@ function parseLaporanSheet(ws: XLSX.WorkSheet) {
  * Parse satu sheet Excel menjadi array baris yang sudah divalidasi.
  * Header mulai di baris 5 (index 4 dalam sheet).
  */
-function parseSheet(ws: XLSX.WorkSheet, isRpl: boolean = true): { rows: ParsedRow[]; errors: string[] } {
+function parseSheet(ws: XLSX.WorkSheet): { rows: ParsedRow[]; errors: string[] } {
   const rows:   ParsedRow[] = [];
   const errors: string[]    = [];
 
@@ -338,34 +328,43 @@ function parseSheet(ws: XLSX.WorkSheet, isRpl: boolean = true): { rows: ParsedRo
 
   const headers = (aoa[headerRowIdx] as string[]) || [];
 
-  // Temukan indeks kolom untuk setiap DB field
-  const fields = [
-    { key: "nis", matchers: ["nis", "no induk", "nomor induk"] },
-    { key: "nama", matchers: ["nama", "nama siswa", "nama lengkap"] },
-    { key: "github", matchers: isRpl ? ["github", "portofolio", "nilai github", "portfolio"] : ["tugas 1", "tugas1", "t1", "tg1", "tugas"] },
-    { key: "api", matchers: isRpl ? ["api", "nilai api", "tugas api"] : ["tugas 2", "tugas2", "t2", "tg2"] },
-    { key: "adminPanel", matchers: isRpl ? ["admin", "admin panel", "nilai admin panel"] : ["tugas 3", "tugas3", "t3", "tg3"] },
-    { key: "landingPage", matchers: isRpl ? ["landing", "landing page", "nilai landing page"] : ["tugas 4", "tugas4", "t4", "tg4"] },
-    { key: "kagglePython", matchers: isRpl ? ["kaggle python", "python"] : ["tugas 5", "tugas5", "t5", "tg5"] },
-    { key: "kaggleSql", matchers: isRpl ? ["kaggle sql", "sql"] : ["tugas 6", "tugas6", "t6", "tg6"] },
-    { key: "kaggleMl", matchers: isRpl ? ["kaggle ml", "ml"] : ["tugas 7", "tugas7", "t7", "tg7"] },
-    { key: "ujianMl", matchers: isRpl ? ["ujian ml", "ujian machine learning"] : ["ujian 1", "ujian1", "u1", "uh1", "uts", "ujian harian 1", "pts"] },
-    { key: "ujianSql", matchers: isRpl ? ["ujian sql"] : ["ujian 2", "ujian2", "u2", "uh2", "uas", "ujian harian 2", "pas"] },
+  // Temukan indeks kolom untuk NIS dan Nama
+  let nisIdx = headers.findIndex((h) => 
+    ["nis", "no induk", "nomor induk"].some(m => String(h).toLowerCase().trim() === m)
+  );
+  if (nisIdx === -1) {
+    nisIdx = headers.findIndex((h) => 
+      ["nis", "no induk", "nomor induk"].some(m => String(h).toLowerCase().includes(m))
+    );
+  }
+
+  let namaIdx = headers.findIndex((h) => 
+    ["nama", "nama siswa", "nama lengkap"].some(m => String(h).toLowerCase().trim() === m)
+  );
+  if (namaIdx === -1) {
+    namaIdx = headers.findIndex((h) => 
+      ["nama", "nama siswa", "nama lengkap"].some(m => String(h).toLowerCase().includes(m))
+    );
+  }
+
+  // Cari task columns
+  const EXCLUDED_HEADERS = [
+    "no", "no.", "nomor", "absen", "keterangan", 
+    "nis", "nama", "nama siswa", "nama lengkap", 
+    "kelas", "rata-rata", "rata rata", "avg", 
+    "raport", "nilai raport", "predikat", "status",
+    "tuntas", "status tuntas", "ketercapaian"
   ];
 
-  const colIdx: Record<string, number> = {};
-  fields.forEach((field) => {
-    // Cari exact match
-    let idx = headers.findIndex((h) =>
-      field.matchers.some((matcher) => String(h).toLowerCase().trim() === matcher)
-    );
-    // Cari fuzzy match
-    if (idx === -1) {
-      idx = headers.findIndex((h) =>
-        field.matchers.some((matcher) => String(h).toLowerCase().includes(matcher))
-      );
+  const taskColumns: { header: string; idx: number }[] = [];
+  headers.forEach((h, idx) => {
+    if (idx === nisIdx || idx === namaIdx) return;
+    const lower = String(h).toLowerCase().trim();
+    if (!lower) return;
+    const isExcluded = EXCLUDED_HEADERS.some(ex => lower.includes(ex) || ex.includes(lower));
+    if (!isExcluded) {
+      taskColumns.push({ header: String(h).trim(), idx });
     }
-    colIdx[field.key] = idx;
   });
 
   // Mulai dari baris setelah header
@@ -373,26 +372,21 @@ function parseSheet(ws: XLSX.WorkSheet, isRpl: boolean = true): { rows: ParsedRo
     const row = aoa[i] as unknown[];
     if (!row) continue;
 
-    const nisVal = colIdx.nis !== -1 && colIdx.nis !== undefined ? cleanNis(row[colIdx.nis]) : "";
-    const namaVal = colIdx.nama !== -1 && colIdx.nama !== undefined ? String(row[colIdx.nama] ?? "").trim() : "";
+    const nisVal = nisIdx !== -1 && row[nisIdx] !== undefined ? cleanNis(row[nisIdx]) : "";
+    const namaVal = namaIdx !== -1 && row[namaIdx] !== undefined ? String(row[namaIdx] ?? "").trim() : "";
 
     if (nisVal === "" && namaVal === "") continue; // skip baris kosong
+
+    const nilai: Record<string, number | null> = {};
+    taskColumns.forEach((col) => {
+      nilai[col.header] = row[col.idx] !== undefined ? numOrNull(row[col.idx]) : null;
+    });
 
     const raw = {
       no:   row[0],
       nis:  nisVal,
       nama: namaVal,
-      nilai: {
-        github:       colIdx.github !== -1 && colIdx.github !== undefined ? numOrNull(row[colIdx.github]) : null,
-        api:          colIdx.api !== -1 && colIdx.api !== undefined ? numOrNull(row[colIdx.api]) : null,
-        adminPanel:   colIdx.adminPanel !== -1 && colIdx.adminPanel !== undefined ? numOrNull(row[colIdx.adminPanel]) : null,
-        landingPage:  colIdx.landingPage !== -1 && colIdx.landingPage !== undefined ? numOrNull(row[colIdx.landingPage]) : null,
-        kagglePython: colIdx.kagglePython !== -1 && colIdx.kagglePython !== undefined ? numOrNull(row[colIdx.kagglePython]) : null,
-        kaggleSql:    colIdx.kaggleSql !== -1 && colIdx.kaggleSql !== undefined ? numOrNull(row[colIdx.kaggleSql]) : null,
-        kaggleMl:     colIdx.kaggleMl !== -1 && colIdx.kaggleMl !== undefined ? numOrNull(row[colIdx.kaggleMl]) : null,
-        ujianMl:      colIdx.ujianMl !== -1 && colIdx.ujianMl !== undefined ? numOrNull(row[colIdx.ujianMl]) : null,
-        ujianSql:     colIdx.ujianSql !== -1 && colIdx.ujianSql !== undefined ? numOrNull(row[colIdx.ujianSql]) : null,
-      },
+      nilai,
     };
 
     const parsed = RowSchema.safeParse(raw);
@@ -483,6 +477,15 @@ export async function POST(req: NextRequest) {
 
         try {
           await prisma.$transaction(async (tx) => {
+            const teacher = await tx.teacher.findFirst({
+              where: { userId: Number(session.user.id) },
+            });
+            let teacherId = teacher?.id;
+            if (!teacherId) {
+              const firstTeacher = await tx.teacher.findFirst();
+              teacherId = firstTeacher?.id;
+            }
+
             let cleanNisStr = row.nis ? String(row.nis).replace(/\s+/g, "").trim() : "";
 
             // Jika NIS kosong, cari dari database berdasarkan Nama di kelas ini
@@ -583,15 +586,6 @@ export async function POST(req: NextRequest) {
             let nilaiTa1 = null;
             if (matchedNote) {
               nilaiTa1 = matchedNote.nilaiTa1;
-              const teacher = await tx.teacher.findFirst({
-                where: { userId: Number(session.user.id) },
-              });
-              let teacherId = teacher?.id;
-              if (!teacherId) {
-                const firstTeacher = await tx.teacher.findFirst();
-                teacherId = firstTeacher?.id;
-              }
-
               if (teacherId) {
                 const scores = [
                   matchedNote.nilaiItem,
@@ -684,25 +678,6 @@ export async function POST(req: NextRequest) {
               },
             });
 
-            // Ambil tasks aktif untuk subject ini
-            const subjectTasks = await tx.task.findMany({
-              where: { subjectId: targetSubjectId },
-              orderBy: { urutan: "asc" },
-            });
-
-            // Nilai dari Excel berdasarkan nama kolom task (matching by nama)
-            const nilaiDariExcel: Record<string, number | null> = {
-              github:       numOrNull(row.nilai.github),
-              api:          numOrNull(row.nilai.api),
-              adminpanel:   numOrNull(row.nilai.adminPanel),
-              landingpage:  numOrNull(row.nilai.landingPage),
-              kagglepython: numOrNull(row.nilai.kagglePython),
-              kagglesql:    numOrNull(row.nilai.kaggleSql),
-              kaggleml:     numOrNull(row.nilai.kaggleMl),
-              ujianml:      numOrNull(row.nilai.ujianMl),
-              ujiansql:     numOrNull(row.nilai.ujianSql),
-            };
-
             // Upsert Grade terlebih dahulu untuk mendapatkan gradeId
             const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
             const ta2 = existingGrade?.nilaiTa2 ?? 0;
@@ -725,17 +700,50 @@ export async function POST(req: NextRequest) {
               gradeId = newGrade.id;
             }
 
-            // Upsert GradeDetail per task
-            for (const task of subjectTasks) {
-              const taskKey = task.nama.toLowerCase().replace(/[^a-z0-9]/g, "");
-              const nilaiTask = nilaiDariExcel[taskKey] ?? null;
-              if (nilaiTask !== null) {
-                await tx.gradeDetail.upsert({
-                  where: { gradeId_taskId: { gradeId, taskId: task.id } },
-                  update: { nilai: nilaiTask },
-                  create: { gradeId, taskId: task.id, nilai: nilaiTask },
+            // Upsert GradeDetail per task secara dinamis
+            for (const [taskName, nilaiTask] of Object.entries(row.nilai)) {
+              if (nilaiTask === null || nilaiTask === undefined) continue;
+
+              // Cari atau buat task untuk subject ini dengan nama taskName dan teacherId ini
+              let task = await tx.task.findFirst({
+                where: {
+                  subjectId: targetSubjectId,
+                  teacherId: teacherId!,
+                  nama: {
+                    equals: taskName,
+                    mode: "insensitive",
+                  },
+                },
+              });
+
+              if (!task) {
+                // Cari urutan terbesar
+                const maxUrutanTask = await tx.task.findFirst({
+                  where: { 
+                    subjectId: targetSubjectId,
+                    teacherId: teacherId!,
+                  },
+                  orderBy: { urutan: "desc" },
+                });
+                const nextUrutan = maxUrutanTask ? maxUrutanTask.urutan + 1 : 0;
+
+                task = await tx.task.create({
+                  data: {
+                    subjectId: targetSubjectId,
+                    teacherId: teacherId!,
+                    nama: taskName,
+                    bobot: 10, // Default weight of 10%
+                    isActive: true,
+                    urutan: nextUrutan,
+                  },
                 });
               }
+
+              await tx.gradeDetail.upsert({
+                where: { gradeId_taskId: { gradeId, taskId: task.id } },
+                update: { nilai: nilaiTask as number | null },
+                create: { gradeId, taskId: task.id, nilai: nilaiTask as number | null },
+              });
             }
 
             // Ambil semua detail terbaru untuk kalkulasi
@@ -782,14 +790,10 @@ export async function POST(req: NextRequest) {
                 data: gradeData,
               });
             } else {
-              await tx.grade.create({
-                data: {
-                  studentId:          student.id,
-                  subjectId:          targetSubjectId,
-                  semester,
-                  tahunAjaran,
-                  ...gradeData,
-                },
+              // Should not be hit as we created it above, but kept for schema completeness
+              await tx.grade.update({
+                where: { id: gradeId },
+                data: gradeData,
               });
             }
           });
@@ -948,7 +952,7 @@ export async function POST(req: NextRequest) {
     const wsCat = catSheetName ? workbook.Sheets[catSheetName] : null;
     const filteredCatatanRows = wsCat ? parseCatatanSheet(wsCat) : [];
 
-    const { rows, errors: parseErrors } = parseSheet(ws, isRpl);
+    const { rows, errors: parseErrors } = parseSheet(ws);
 
     const match = namaKelas.match(/^(X|XI|XII)\b/i) || namaKelas.match(/^(X|XI|XII)/i);
     let tingkat = 11;
@@ -1159,25 +1163,6 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          // Ambil tasks aktif untuk subject ini
-          const subjectTasks2 = await tx.task.findMany({
-            where: { subjectId: subject.id },
-            orderBy: { urutan: "asc" },
-          });
-
-          // Nilai dari Excel berdasarkan nama task
-          const nilaiDariExcel2: Record<string, number | null> = {
-            github:       numOrNull(row.nilai.github),
-            api:          numOrNull(row.nilai.api),
-            adminpanel:   numOrNull(row.nilai.adminPanel),
-            landingpage:  numOrNull(row.nilai.landingPage),
-            kagglepython: numOrNull(row.nilai.kagglePython),
-            kagglesql:    numOrNull(row.nilai.kaggleSql),
-            kaggleml:     numOrNull(row.nilai.kaggleMl),
-            ujianml:      numOrNull(row.nilai.ujianMl),
-            ujiansql:     numOrNull(row.nilai.ujianSql),
-          };
-
           const ta1 = nilaiTa1 !== null ? Number(nilaiTa1) : (existingGrade?.nilaiTa1 ?? 0);
           const ta2 = existingGrade?.nilaiTa2 ?? 0;
           const finalPersentaseHadir = persentaseHadir !== null ? persentaseHadir : (existingGrade?.persentaseHadir ?? null);
@@ -1200,17 +1185,50 @@ export async function POST(req: NextRequest) {
             gradeId2 = newGrade2.id;
           }
 
-          // Upsert GradeDetail per task
-          for (const task of subjectTasks2) {
-            const taskKey = task.nama.toLowerCase().replace(/[^a-z0-9]/g, "");
-            const nilaiTask = nilaiDariExcel2[taskKey] ?? null;
-            if (nilaiTask !== null) {
-              await tx.gradeDetail.upsert({
-                where: { gradeId_taskId: { gradeId: gradeId2, taskId: task.id } },
-                update: { nilai: nilaiTask },
-                create: { gradeId: gradeId2, taskId: task.id, nilai: nilaiTask },
+          // Upsert GradeDetail per task secara dinamis
+          for (const [taskName, nilaiTask] of Object.entries(row.nilai)) {
+            if (nilaiTask === null || nilaiTask === undefined) continue;
+
+            // Cari atau buat task untuk subject ini dengan nama taskName
+            let task = await tx.task.findFirst({
+              where: {
+                subjectId: subject.id,
+                teacherId: teacherId!,
+                nama: {
+                  equals: taskName,
+                  mode: "insensitive",
+                },
+              },
+            });
+
+            if (!task) {
+              // Cari urutan terbesar
+              const maxUrutanTask = await tx.task.findFirst({
+                where: { 
+                  subjectId: subject.id,
+                  teacherId: teacherId!,
+                },
+                orderBy: { urutan: "desc" },
+              });
+              const nextUrutan = maxUrutanTask ? maxUrutanTask.urutan + 1 : 0;
+
+              task = await tx.task.create({
+                data: {
+                  subjectId: subject.id,
+                  teacherId: teacherId!,
+                  nama: taskName,
+                  bobot: 10, // Default weight of 10%
+                  isActive: true,
+                  urutan: nextUrutan,
+                },
               });
             }
+
+            await tx.gradeDetail.upsert({
+              where: { gradeId_taskId: { gradeId: gradeId2, taskId: task.id } },
+              update: { nilai: nilaiTask as number | null },
+              create: { gradeId: gradeId2, taskId: task.id, nilai: nilaiTask as number | null },
+            });
           }
 
           // Ambil detail terbaru untuk kalkulasi

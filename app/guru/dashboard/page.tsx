@@ -88,14 +88,27 @@ export default async function GuruDashboardPage() {
   const totalSiswa = kelas.reduce((s, k) => s + k.students.length, 0);
   const studentIds = kelas.flatMap((k) => k.students.map((s) => s.id));
 
+  const tcsList = teacherId
+    ? await prisma.teacherClassSubject.findMany({
+        where: { teacherId },
+        select: { subjectId: true },
+      })
+    : [];
+  const assignedSubjectIds = Array.from(new Set(tcsList.map((t) => t.subjectId)));
+
+  const gradesWhere: any = {
+    studentId: { in: studentIds },
+    semester: SEMESTER,
+    tahunAjaran: TAHUN_AJARAN,
+  };
+  if (session.user.role === "guru" && teacherId) {
+    gradesWhere.subjectId = { in: assignedSubjectIds };
+  }
+
   // ── Fetch Taught Student Data paralel ──────────────────────────────────────
   const [allGrades, allAttendances, recentGrades] = await Promise.all([
     prisma.grade.findMany({
-      where: {
-        studentId: { in: studentIds },
-        semester: SEMESTER,
-        tahunAjaran: TAHUN_AJARAN,
-      },
+      where: gradesWhere,
       select: {
         nilaiRaport: true,
         statusTuntas: true,
@@ -117,9 +130,7 @@ export default async function GuruDashboardPage() {
     }),
     prisma.grade.findMany({
       where: {
-        studentId: { in: studentIds },
-        semester: SEMESTER,
-        tahunAjaran: TAHUN_AJARAN,
+        ...gradesWhere,
         nilaiRaport: { not: null },
       },
       orderBy: { updatedAt: "desc" },

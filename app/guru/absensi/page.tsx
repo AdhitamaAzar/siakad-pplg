@@ -28,8 +28,26 @@ export default async function GuruAbsensiPage({ searchParams }: PageProps) {
   const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const sp = await searchParams;
 
+  const teacher = await prisma.teacher.findFirst({
+    where: { userId: Number(session.user.id) },
+  });
+  const teacherId = teacher?.id;
+
+  const tcsList = teacherId
+    ? await prisma.teacherClassSubject.findMany({
+        where: { teacherId },
+        select: { kelasId: true },
+      })
+    : [];
+
+  const assignedClassIds = Array.from(new Set(tcsList.map((t) => t.kelasId)));
+  const isTeacher = session.user.role === "guru" && teacherId;
+
   const kelasList = await prisma.class.findMany({
-    where: { tahunAjaran: TAHUN_AJARAN },
+    where: {
+      tahunAjaran: TAHUN_AJARAN,
+      id: isTeacher ? { in: assignedClassIds } : undefined,
+    },
     orderBy: { namaKelas: "asc" },
   });
 

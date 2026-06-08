@@ -24,20 +24,28 @@ export async function GET(req: NextRequest) {
 
   const subjectId = Number(subjectIdStr);
   try {
+    const teacher = await prisma.teacher.findFirst({
+      where: { userId: Number(session.user.id) },
+    });
+    const teacherId = teacher?.id;
+
     const subject = await prisma.subject.findUnique({
       where: { id: subjectId },
-      include: {
-        tasks: {
-          orderBy: { urutan: "asc" },
-        },
-      },
     });
 
     if (!subject) {
       return NextResponse.json({ error: "Mata pelajaran tidak ditemukan." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, subject, tasks: subject.tasks });
+    const tasks = await prisma.task.findMany({
+      where: {
+        subjectId,
+        teacherId: teacherId || undefined,
+      },
+      orderBy: { urutan: "asc" },
+    });
+
+    return NextResponse.json({ ok: true, subject, tasks });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -78,6 +86,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const teacher = await prisma.teacher.findFirst({
+      where: { userId: Number(session.user.id) },
+    });
+    const teacherId = teacher?.id;
+
     // Update bobot dan isActive setiap task
     await Promise.all(
       tasksUpdate.map((t) =>
@@ -93,12 +106,29 @@ export async function POST(req: NextRequest) {
 
     // Ambil semua Task yang sudah diupdate
     const updatedTasks = await prisma.task.findMany({
-      where: { subjectId },
+      where: {
+        subjectId,
+        teacherId: teacherId || undefined,
+      },
     });
+
+    // Find classes taught by this teacher for this subject to filter recalculation scope
+    const tcs = teacherId
+      ? await prisma.teacherClassSubject.findMany({
+          where: { teacherId, subjectId },
+          select: { kelasId: true },
+        })
+      : null;
+
+    const gradesWhere: any = { subjectId };
+    if (tcs) {
+      const kelasIds = tcs.map((t) => t.kelasId);
+      gradesWhere.student = { kelasId: { in: kelasIds } };
+    }
 
     // Ambil semua Grade yang berkaitan dengan subject ini beserta GradeDetail-nya
     const grades = await prisma.grade.findMany({
-      where: { subjectId },
+      where: gradesWhere,
       include: {
         details: true,
       },

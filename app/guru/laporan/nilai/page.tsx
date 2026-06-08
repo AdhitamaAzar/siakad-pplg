@@ -10,6 +10,8 @@ import prisma from "@/lib/prisma";
 import Link from "next/link";
 import { FileText, Printer, TrendingUp, TrendingDown, BarChart3, CheckCircle2 } from "lucide-react";
 import { getActiveAcademicConfig } from "@/lib/academicConfig";
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "Rekap Nilai — Laporan" };
 
@@ -60,11 +62,36 @@ interface PageProps {
 }
 
 export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
   const sp = await searchParams;
   const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
+  const teacher = await prisma.teacher.findFirst({
+    where: { userId: Number(session.user.id) },
+  });
+  const teacherId = teacher?.id;
+
+  const tcsList = teacherId
+    ? await prisma.teacherClassSubject.findMany({
+        where: { teacherId },
+        select: { kelasId: true, subjectId: true },
+      })
+    : [];
+
+  const assignedClassIds = Array.from(new Set(tcsList.map((t) => t.kelasId)));
+  const assignedSubjectIds = Array.from(new Set(tcsList.map((t) => t.subjectId)));
+
+  const isTeacher = session.user.role === "guru" && teacherId;
+
   const kelasList = await prisma.class.findMany({
-    where: { tahunAjaran: TAHUN_AJARAN },
+    where: {
+      tahunAjaran: TAHUN_AJARAN,
+      id: isTeacher ? { in: assignedClassIds } : undefined,
+    },
     orderBy: { namaKelas: "asc" },
   });
 
@@ -73,6 +100,9 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
 
   // Ambil semua subject + tasks
   const subjectsList = await prisma.subject.findMany({
+    where: {
+      id: isTeacher ? { in: assignedSubjectIds } : undefined,
+    },
     orderBy: { namaMapel: "asc" },
     select: { id: true, namaMapel: true, kodeMapel: true },
   });
@@ -81,7 +111,11 @@ export default async function GuruLaporanNilaiPage({ searchParams }: PageProps) 
   // Ambil tasks untuk subject aktif (untuk header kolom dinamis)
   const activeTasks = activeSubjectId
     ? await prisma.task.findMany({
-        where: { subjectId: activeSubjectId, isActive: true },
+        where: { 
+          subjectId: activeSubjectId, 
+          isActive: true,
+          teacherId: teacherId || undefined,
+        },
         orderBy: { urutan: "asc" },
       })
     : [];

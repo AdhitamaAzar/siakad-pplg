@@ -22,15 +22,39 @@ export default async function GuruRankingPage() {
 
   const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
 
+  const teacher = await prisma.teacher.findFirst({
+    where: { userId: Number(session.user.id) },
+  });
+  const teacherId = teacher?.id;
+
+  const tcsList = teacherId
+    ? await prisma.teacherClassSubject.findMany({
+        where: { teacherId },
+        select: { kelasId: true },
+      })
+    : [];
+
+  const assignedClassIds = Array.from(new Set(tcsList.map((t) => t.kelasId)));
+  const isTeacher = session.user.role === "guru" && teacherId;
+
   // Fetch all classes
   const kelasList = await prisma.class.findMany({
-    where: { tahunAjaran: TAHUN_AJARAN },
+    where: {
+      tahunAjaran: TAHUN_AJARAN,
+      id: isTeacher ? { in: assignedClassIds } : undefined,
+    },
     orderBy: { namaKelas: "asc" },
     select: { id: true, namaKelas: true },
   });
 
   // Fetch all students with their grades for ranking
   const rawStudents = await prisma.student.findMany({
+    where: {
+      kelasId: isTeacher ? { in: assignedClassIds } : undefined,
+      kelas: {
+        tahunAjaran: TAHUN_AJARAN,
+      },
+    },
     include: {
       kelas: {
         select: { id: true, namaKelas: true },

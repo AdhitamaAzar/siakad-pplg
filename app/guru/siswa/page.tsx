@@ -47,15 +47,19 @@ export default async function GuruSiswaPage({ searchParams }: PageProps) {
     where: { userId: Number(session.user.id) },
   });
 
+  const isTeacher = session.user.role === "guru" && teacherRecord?.id;
+
   // Ambil kelas yang diajar oleh guru ini
   const kelasList = await prisma.class.findMany({
     where: {
       tahunAjaran: TAHUN_AJARAN,
-      classSubjects: {
-        some: {
-          teacherId: teacherRecord?.id,
-        },
-      },
+      classSubjects: isTeacher
+        ? {
+            some: {
+              teacherId: teacherRecord.id,
+            },
+          }
+        : undefined,
     },
     orderBy: { namaKelas: "asc" },
   });

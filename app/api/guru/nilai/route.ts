@@ -46,9 +46,17 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Ambil semua task untuk subject ini agar bisa ditampilkan meski belum ada nilai
+    const teacher = await prisma.teacher.findFirst({
+      where: { userId: Number(session.user.id) },
+    });
+    const teacherId = teacher?.id;
+
+    // Ambil semua task untuk subject ini dan teacher ini agar bisa ditampilkan meski belum ada nilai
     const tasks = await prisma.task.findMany({
-      where: { subjectId: Number(subjectId) },
+      where: { 
+        subjectId: Number(subjectId),
+        teacherId: teacherId || undefined,
+      },
       orderBy: { urutan: "asc" },
     });
 
@@ -128,9 +136,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Ambil semua Task untuk subject ini dan semua GradeDetail terbaru
+    const teacher = await prisma.teacher.findFirst({
+      where: { userId: Number(session.user.id) },
+    });
+    const teacherId = teacher?.id;
+
+    // Ambil semua Task untuk subject ini dan teacher ini
     const allTasks = await prisma.task.findMany({
-      where: { subjectId },
+      where: { 
+        subjectId,
+        teacherId: teacherId || undefined,
+      },
     });
 
     const allDetails = await prisma.gradeDetail.findMany({

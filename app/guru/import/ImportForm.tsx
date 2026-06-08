@@ -20,18 +20,9 @@ import * as XLSX from "xlsx";
 
 // ─── TYPES & CONSTANTS ────────────────────────────────────────────────────────
 
-const getDbFields = (isRpl: boolean) => [
-  { key: "nis", label: "NIS (Wajib)", required: true, matchers: ["nis", "no induk", "nomor induk"] },
+const getDbFields = () => [
+  { key: "nis", label: "NIS", required: false, matchers: ["nis", "no induk", "nomor induk"] },
   { key: "nama", label: "Nama (Wajib)", required: true, matchers: ["nama", "nama siswa", "nama lengkap"] },
-  { key: "nilaiGithub", label: isRpl ? "Nilai Github" : "Tugas 1", required: false, matchers: isRpl ? ["github", "portofolio", "nilai github", "portfolio"] : ["tugas 1", "tugas1", "t1", "tg1", "tugas"] },
-  { key: "nilaiApi", label: isRpl ? "Nilai API" : "Tugas 2", required: false, matchers: isRpl ? ["api", "nilai api", "tugas api"] : ["tugas 2", "tugas2", "t2", "tg2"] },
-  { key: "nilaiAdminPanel", label: isRpl ? "Nilai Admin Panel" : "Tugas 3", required: false, matchers: isRpl ? ["admin", "admin panel", "nilai admin panel"] : ["tugas 3", "tugas3", "t3", "tg3"] },
-  { key: "nilaiLandingPage", label: isRpl ? "Nilai Landing Page" : "Tugas 4", required: false, matchers: isRpl ? ["landing", "landing page", "nilai landing page"] : ["tugas 4", "tugas4", "t4", "tg4"] },
-  { key: "nilaiKagglePython", label: isRpl ? "Kaggle Python" : "Tugas 5", required: false, matchers: isRpl ? ["kaggle python", "python"] : ["tugas 5", "tugas5", "t5", "tg5"] },
-  { key: "nilaiKaggleSql", label: isRpl ? "Kaggle SQL" : "Tugas 6", required: false, matchers: isRpl ? ["kaggle sql", "sql"] : ["tugas 6", "tugas6", "t6", "tg6"] },
-  { key: "nilaiKaggleMl", label: isRpl ? "Kaggle ML" : "Tugas 7", required: false, matchers: isRpl ? ["kaggle ml", "ml"] : ["tugas 7", "tugas7", "t7", "tg7"] },
-  { key: "nilaiUjianMl", label: isRpl ? "Ujian ML" : "Ujian 1", required: false, matchers: isRpl ? ["ujian ml", "ujian machine learning"] : ["ujian 1", "ujian1", "u1", "uh1", "uts", "ujian harian 1", "pts"] },
-  { key: "nilaiUjianSql", label: isRpl ? "Ujian SQL" : "Ujian 2", required: false, matchers: isRpl ? ["ujian sql"] : ["ujian 2", "ujian2", "u2", "uh2", "uas", "ujian harian 2", "pas"] },
 ];
 
 interface ExcelSheetData {
@@ -191,14 +182,31 @@ export default function ImportForm() {
 
   const activeSubject = subjects.find((s) => String(s.id) === defaultSubjectId);
   const isRpl = activeSubject ? activeSubject.kodeMapel.toLowerCase().includes("pplg") : true;
-  const dbFields = getDbFields(isRpl);
-
+  const dbFields = getDbFields();
   // Flow states: 'upload' | 'preview' | 'importing' | 'result'
   const [step, setStep] = useState<"upload" | "preview" | "importing" | "result">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [sheets, setSheets] = useState<ExcelSheetData[]>([]);
   const [currentSheetIdx, setCurrentSheetIdx] = useState<number>(0);
+
+  const currentSheet = sheets[currentSheetIdx];
+  const EXCLUDED_HEADERS = [
+    "no", "no.", "nomor", "absen", "keterangan", 
+    "nis", "nama", "nama siswa", "nama lengkap", 
+    "kelas", "rata-rata", "rata rata", "avg", 
+    "raport", "nilai raport", "predikat", "status",
+    "tuntas", "status tuntas", "ketercapaian"
+  ];
+  const activeTaskHeaders = currentSheet 
+    ? currentSheet.headers.filter(h => {
+        const lower = h.toLowerCase().trim();
+        const isNisCol = currentSheet.columnMap.nis && currentSheet.columnMap.nis.toLowerCase().trim() === lower;
+        const isNamaCol = currentSheet.columnMap.nama && currentSheet.columnMap.nama.toLowerCase().trim() === lower;
+        return !isNisCol && !isNamaCol && !EXCLUDED_HEADERS.some(ex => lower.includes(ex) || ex.includes(lower));
+      })
+    : [];
+
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, sheetName: "" });
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
@@ -240,7 +248,13 @@ export default function ImportForm() {
   // ─── VALIDATION ────────────────────────────────────────────────────────────
 
   const validateSheets = useCallback((targetSheets: ExcelSheetData[]) => {
-    const fields = getDbFields(isRpl);
+    const EXCLUDED_HEADERS = [
+      "no", "no.", "nomor", "absen", "keterangan", 
+      "nis", "nama", "nama siswa", "nama lengkap", 
+      "kelas", "rata-rata", "rata rata", "avg", 
+      "raport", "nilai raport", "predikat", "status",
+      "tuntas", "status tuntas", "ketercapaian"
+    ];
     return targetSheets.map((sheet) => {
       if (!sheet.isSelected) return sheet;
 
@@ -260,20 +274,25 @@ export default function ImportForm() {
         errors.push("Kolom Nama belum dipetakan.");
       }
 
+      const taskHeaders = sheet.headers.filter(h => {
+        const lower = h.toLowerCase().trim();
+        const isNisCol = sheet.columnMap.nis && sheet.columnMap.nis.toLowerCase().trim() === lower;
+        const isNamaCol = sheet.columnMap.nama && sheet.columnMap.nama.toLowerCase().trim() === lower;
+        return !isNisCol && !isNamaCol && !EXCLUDED_HEADERS.some(ex => lower.includes(ex) || ex.includes(lower));
+      });
+
       validRows.forEach((row, idx) => {
         const namaVal = sheet.columnMap.nama ? String(row[sheet.columnMap.nama] || "").trim() : "";
 
-        // Validasi nilai harus 0 - 100 (lewati jika berisi "-", "Belum", atau kosong)
-        fields.forEach((f) => {
-          if (f.key !== "nis" && f.key !== "nama" && sheet.columnMap[f.key]) {
-            const val = row[sheet.columnMap[f.key]];
-            const valStr = val !== null && val !== undefined ? String(val).trim() : "";
-            if (valStr !== "") {
-              const num = Number(valStr);
-              if (!isNaN(num)) {
-                if (num < 0 || num > 100) {
-                  errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${f.label} tidak valid (${val}). Harus 0-100.`);
-                }
+        // Validasi nilai harus 0 - 100
+        taskHeaders.forEach((h) => {
+          const val = row[h];
+          const valStr = val !== null && val !== undefined ? String(val).trim() : "";
+          if (valStr !== "") {
+            const num = Number(valStr);
+            if (!isNaN(num)) {
+              if (num < 0 || num > 100) {
+                errors.push(`Baris ${idx + 1} (${namaVal || "Siswa"}): Nilai ${h} tidak valid (${val}). Harus 0-100.`);
               }
             }
           }
@@ -282,7 +301,7 @@ export default function ImportForm() {
 
       return { ...sheet, rows: validRows, validationErrors: errors };
     });
-  }, [isRpl]);
+  }, []);
 
   // ─── FILE PARSING ──────────────────────────────────────────────────────────
 
@@ -350,7 +369,7 @@ export default function ImportForm() {
 
         // Auto-mapping kolom otomatis
         const columnMap: Record<string, string> = {};
-        const fields = getDbFields(isRpl);
+        const fields = getDbFields();
         fields.forEach((field) => {
           const matchedHeader = headers.find((h) =>
             field.matchers.some((matcher) => String(h).toLowerCase().trim() === matcher)
@@ -388,7 +407,7 @@ export default function ImportForm() {
       setStep("preview");
     };
     reader.readAsArrayBuffer(uploadedFile);
-  }, [classes, isRpl, validateSheets]);
+  }, [classes, validateSheets]);
 
   // ─── FILE DRAG & DROP HANDLERS ─────────────────────────────────────────────
 
@@ -410,26 +429,37 @@ export default function ImportForm() {
 
     const finalResults: NonNullable<ImportResult["sheets"]> = [];
     let isSuccessGlobal = true;
-    const fields = getDbFields(isRpl);
 
     for (let i = 0; i < activeSheets.length; i++) {
       const sheet = activeSheets[i]!;
       setImportProgress({ current: i + 1, total: activeSheets.length, sheetName: sheet.sheetName });
 
+      // Dapatkan task headers untuk sheet ini secara dinamis
+      const EXCLUDED_HEADERS = [
+        "no", "no.", "nomor", "absen", "keterangan", 
+        "nis", "nama", "nama siswa", "nama lengkap", 
+        "kelas", "rata-rata", "rata rata", "avg", 
+        "raport", "nilai raport", "predikat", "status",
+        "tuntas", "status tuntas", "ketercapaian"
+      ];
+      
+      const taskHeaders = sheet.headers.filter(h => {
+        const lower = h.toLowerCase().trim();
+        const isNisCol = sheet.columnMap.nis && sheet.columnMap.nis.toLowerCase().trim() === lower;
+        const isNamaCol = sheet.columnMap.nama && sheet.columnMap.nama.toLowerCase().trim() === lower;
+        return !isNisCol && !isNamaCol && !EXCLUDED_HEADERS.some(ex => lower.includes(ex) || ex.includes(lower));
+      });
+
       // Transform rows sesuai pemetaan kolom
       const mappedRows = sheet.rows.map((row) => {
         const nilai: Record<string, number | null> = {};
-        fields.forEach((f) => {
-          if (f.key !== "nis" && f.key !== "nama") {
-            const excelHeader = sheet.columnMap[f.key];
-            const rawVal = excelHeader ? row[excelHeader] : "";
-            const rawValStr = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : "";
-            const num = Number(rawValStr);
-            // Jika nilai kosong atau bukan angka (misal "-", "Belum", dll.), simpan sebagai null agar diabaikan
-            const isEmpty = rawValStr === "" || isNaN(num);
-            nilai[f.key.replace("nilai", "").replace(/^\w/, (c) => c.toLowerCase())] =
-              isEmpty ? null : num;
-          }
+        taskHeaders.forEach((h) => {
+          const rawVal = row[h];
+          const rawValStr = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : "";
+          const num = Number(rawValStr);
+          // Jika nilai kosong atau bukan angka (misal "-", "Belum", dll.), simpan sebagai null agar diabaikan
+          const isEmpty = rawValStr === "" || isNaN(num);
+          nilai[h] = isEmpty ? null : num;
         });
 
         return {
@@ -696,6 +726,14 @@ export default function ImportForm() {
               </div>
             )}
 
+            {/* Kolom Tugas Terdeteksi */}
+            {currentSheet && activeTaskHeaders.length > 0 && (
+              <div className="p-3.5 rounded-xl border border-indigo-500/20 bg-indigo-500/5 text-xs text-slate-400">
+                <span className="font-bold text-slate-350">Tugas Terdeteksi ({activeTaskHeaders.length}): </span>
+                <span className="text-indigo-400 font-semibold">{activeTaskHeaders.join(", ")}</span>
+              </div>
+            )}
+
             {/* Error panel jika ada error validasi */}
             {sheets[currentSheetIdx]?.validationErrors && sheets[currentSheetIdx]!.validationErrors.length > 0 && (
               <div className="p-3.5 rounded-xl border border-rose-500/20 bg-rose-500/5 space-y-1">
@@ -722,6 +760,11 @@ export default function ImportForm() {
                         {f.label}
                       </th>
                     ))}
+                    {activeTaskHeaders.map((h) => (
+                      <th key={h} className="px-3 py-2 whitespace-nowrap text-indigo-400">
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/40 text-slate-300">
@@ -734,6 +777,18 @@ export default function ImportForm() {
                         return (
                           <td key={f.key} className="px-3 py-2 whitespace-nowrap">
                             {val === "" ? (
+                              <span className="text-slate-700">—</span>
+                            ) : (
+                              val
+                            )}
+                          </td>
+                        );
+                      })}
+                      {activeTaskHeaders.map((h) => {
+                        const val = row[h];
+                        return (
+                          <td key={h} className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                            {val === "" || val === null || val === undefined ? (
                               <span className="text-slate-700">—</span>
                             ) : (
                               val
@@ -855,6 +910,18 @@ export default function ImportForm() {
                               </select>
                             </div>
                           ))}
+                        </div>
+                        {/* Kolom Tugas Terdeteksi */}
+                        <div className="mt-3.5 text-[10px] text-slate-400 bg-slate-950/40 p-2.5 rounded-lg border border-slate-900/40">
+                          <span className="font-bold text-slate-350">Tugas Terdeteksi Otomatis: </span>
+                          <span className="text-indigo-400 font-semibold">
+                            {sheet.headers.filter(h => {
+                              const lower = h.toLowerCase().trim();
+                              const isNisCol = sheet.columnMap.nis && sheet.columnMap.nis.toLowerCase().trim() === lower;
+                              const isNamaCol = sheet.columnMap.nama && sheet.columnMap.nama.toLowerCase().trim() === lower;
+                              return !isNisCol && !isNamaCol && !EXCLUDED_HEADERS.some(ex => lower.includes(ex) || ex.includes(lower));
+                            }).join(", ") || <span className="text-slate-500 italic">Tidak ada kolom tugas terdeteksi</span>}
+                          </span>
                         </div>
                       </div>
                     )}

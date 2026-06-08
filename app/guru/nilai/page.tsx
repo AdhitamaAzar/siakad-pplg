@@ -27,8 +27,28 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
   const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const sp = await searchParams;
 
+  const teacher = await prisma.teacher.findFirst({
+    where: { userId: Number(session.user.id) },
+  });
+  const teacherId = teacher?.id;
+
+  const tcsList = teacherId
+    ? await prisma.teacherClassSubject.findMany({
+        where: { teacherId },
+        select: { kelasId: true, subjectId: true },
+      })
+    : [];
+
+  const assignedClassIds = Array.from(new Set(tcsList.map((t) => t.kelasId)));
+  const assignedSubjectIds = Array.from(new Set(tcsList.map((t) => t.subjectId)));
+
+  const isTeacher = session.user.role === "guru" && teacherId;
+
   const kelasList = await prisma.class.findMany({
-    where: { tahunAjaran: TAHUN_AJARAN },
+    where: {
+      tahunAjaran: TAHUN_AJARAN,
+      id: isTeacher ? { in: assignedClassIds } : undefined,
+    },
     orderBy: { namaKelas: "asc" },
     select: { id: true, namaKelas: true },
   });
@@ -37,6 +57,9 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
 
   // Ambil subject beserta tasks-nya (sistem dinamis)
   const subjectsList = await prisma.subject.findMany({
+    where: {
+      id: isTeacher ? { in: assignedSubjectIds } : undefined,
+    },
     orderBy: { namaMapel: "asc" },
     select: {
       id: true,
@@ -44,6 +67,9 @@ export default async function GuruNilaiPage({ searchParams }: PageProps) {
       kodeMapel: true,
       tingkat: true,
       tasks: {
+        where: {
+          teacherId: teacherId || undefined,
+        },
         orderBy: { urutan: "asc" },
         select: {
           id: true,

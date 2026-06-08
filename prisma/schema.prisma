@@ -70,6 +70,7 @@ model Teacher {
 
   notes Note[]
   classSubjects TeacherClassSubject[]
+  tasks Task[]
 
   @@map("teachers")
 }
@@ -350,6 +351,8 @@ model Task {
   id        Int      @id @default(autoincrement())
   subjectId Int
   subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacherId Int
+  teacher   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   /// Nama komponen (contoh: "Github", "Ujian SQL", "Tugas 1")
   nama      String
   /// Persentase bobot penilaian (0-100)
@@ -361,7 +364,7 @@ model Task {
 
   gradeDetails GradeDetail[]
 
-  @@unique([subjectId, nama])
+  @@unique([subjectId, teacherId, nama])
   @@map("tasks")
 }
 

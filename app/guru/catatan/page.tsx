@@ -8,6 +8,8 @@
 import type { Metadata } from "next";
 import prisma from "@/lib/prisma";
 import CatatanClientPage from "./CatatanClientPage";
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 import { getActiveAcademicConfig } from "@/lib/academicConfig";
 
@@ -18,12 +20,35 @@ interface PageProps {
 }
 
 export default async function CatatanGuruPage({ searchParams }: PageProps) {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
   const { tahunAjaran: TAHUN_AJARAN, semester: SEMESTER } = await getActiveAcademicConfig();
   const sp = await searchParams;
 
+  const teacher = await prisma.teacher.findFirst({
+    where: { userId: Number(session.user.id) },
+  });
+  const teacherId = teacher?.id;
+
+  const tcsList = teacherId
+    ? await prisma.teacherClassSubject.findMany({
+        where: { teacherId },
+        select: { kelasId: true },
+      })
+    : [];
+
+  const assignedClassIds = Array.from(new Set(tcsList.map((t) => t.kelasId)));
+  const isTeacher = session.user.role === "guru" && teacherId;
+
   // Ambil daftar kelas aktif
   const kelasList = await prisma.class.findMany({
-    where: { tahunAjaran: TAHUN_AJARAN },
+    where: {
+      tahunAjaran: TAHUN_AJARAN,
+      id: isTeacher ? { in: assignedClassIds } : undefined,
+    },
     orderBy: { namaKelas: "asc" },
   });
 
@@ -34,6 +59,9 @@ export default async function CatatanGuruPage({ searchParams }: PageProps) {
     where: { kelasId: activeKelasId },
     include: {
       notes: {
+        where: {
+          teacherId: isTeacher ? teacherId : undefined,
+        },
         include: {
           teacher: {
             select: { nama: true },
